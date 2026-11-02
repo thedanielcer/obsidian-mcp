@@ -1,11 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/server";
+import type { JWTPayload } from "jose";
 import * as z from "zod";
 
-function greetTool(name: string): string {
+function greetTool(name: string, identity: JWTPayload): string {
 	return `Hello, ${name}! Welcome to the Obsidian MCP server.`;
 }
 
-export function registerGreetTool(server: McpServer) {
+export function registerGreetTool(server: McpServer, identity: JWTPayload) {
 	server.registerTool(
 		"greet",
 		{
@@ -15,9 +16,7 @@ export function registerGreetTool(server: McpServer) {
 			}),
 		},
 		({ name }) => ({
-			content: [{ type: "text", text: greetTool(name) }],
+			content: [{ type: "text", text: greetTool(name, identity) }],
 		}),
 	);
 }
-
-export const text: string = "asdfasdf";
