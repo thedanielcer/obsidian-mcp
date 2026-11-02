@@ -2,7 +2,7 @@ import { loadEnvFile } from "node:process";
 import * as z from "zod";
 
 const appConfigSchema = z.object({
-	host: z.string().trim().min(1).default("127.0.0.1"),
+	host: z.string().trim().min(1).default("0.0.0.0"),
 	port: z.coerce.number().int().min(1).max(65535).default(3000),
 	teamDomain: z
 		.string()
