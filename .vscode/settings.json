@@ -1,0 +1,13 @@
+{
+  "js/ts.suggest.enabled": true,
+  "js/ts.suggest.autoImports": true,
+  "js/ts.preferences.includePackageJsonAutoImports": "on",
+  "[typescript]": {
+    "editor.quickSuggestions": {
+      "other": "on",
+      "comments": "off",
+      "strings": "off"
+    },
+    "editor.suggestOnTriggerCharacters": true
+  }
+}
