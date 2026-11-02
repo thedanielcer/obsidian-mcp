@@ -13,9 +13,23 @@ const appConfigSchema = z.object({
 
 export type AppConfig = z.infer<typeof appConfigSchema>;
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-	loadEnvFile(".env");
-    
+export function loadConfig(env?: NodeJS.ProcessEnv): AppConfig {
+	if (env === undefined) {
+		try {
+			loadEnvFile(".env");
+		} catch (error) {
+			const isMissingEnvFile =
+				error instanceof Error &&
+				"code" in error &&
+				error.code === "ENOENT";
+			if (!isMissingEnvFile) {
+				throw error;
+			}
+		}
+
+		env = process.env;
+	}
+
 	return appConfigSchema.parse({
 		host: env.HOST,
 		port: env.PORT,
