@@ -7,6 +7,7 @@ import { createAuthMiddleware } from "./auth/cloudflare.middleware.ts";
 export function createApp(config: AppConfig) {
 	const app = createMcpExpressApp({
 		host: config.host,
+		allowedHosts: config.allowedHosts,
 	});
 
 	const mcpHttpHandler = createMcpHttpHandler();
