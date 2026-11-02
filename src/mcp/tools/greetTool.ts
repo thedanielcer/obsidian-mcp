@@ -1,12 +1,16 @@
 import { McpServer } from "@modelcontextprotocol/server";
-import type { JWTPayload } from "jose";
 import * as z from "zod";
+import type { CallerIdentity } from "../../auth/caller-identity.ts";
 
-function greetTool(name: string, identity: JWTPayload): string {
-	return `Hello, ${name}! Welcome to the Obsidian MCP server.`;
+function greetTool(name: string, identity: CallerIdentity): string {
+	return (
+		`Hello, ${name}! Welcome to the Obsidian MCP server.\n` +
+		`You're authenticated as ${identity.email}.\n` +
+		`Your user ID is ${identity.userId}.`
+	);
 }
 
-export function registerGreetTool(server: McpServer, identity: JWTPayload) {
+export function registerGreetTool(server: McpServer, identity: CallerIdentity) {
 	server.registerTool(
 		"greet",
 		{

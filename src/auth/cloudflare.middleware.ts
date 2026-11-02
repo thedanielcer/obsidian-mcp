@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import type { AppConfig } from "../config/env.ts";
 import { createCloudflareVerifier } from "./cloudflare.verifier.ts";
-import type { JWTPayload } from "jose";
+import type { CallerIdentity } from "./caller-identity.ts";
 
 export function createAuthMiddleware(config: AppConfig) {
 	const verifyAccessJwt = createCloudflareVerifier(config);
@@ -15,7 +15,7 @@ export function createAuthMiddleware(config: AppConfig) {
 		}
 
 		try {
-			const identity: JWTPayload = await verifyAccessJwt(token);
+			const identity: CallerIdentity = await verifyAccessJwt(token);
 			res.locals.identity = identity;
 		} catch {
 			res.status(403).send("Invalid CF Access JWT");

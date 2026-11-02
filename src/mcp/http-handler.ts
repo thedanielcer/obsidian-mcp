@@ -2,11 +2,11 @@ import type { RequestHandler } from "express";
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpServer } from "./create-server.ts";
-import type { JWTPayload } from "jose";
+import type { CallerIdentity } from "../auth/caller-identity.ts";
 
 export function createMcpHttpHandler(): RequestHandler {
 	return (req, res, next) => {
-		const identity: JWTPayload = res.locals.identity;
+		const identity: CallerIdentity = res.locals.identity;
 
 		const handler = createMcpHandler(() => createMcpServer(identity));
 

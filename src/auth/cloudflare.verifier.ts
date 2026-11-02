@@ -1,4 +1,8 @@
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
+import { createRemoteJWKSet, jwtVerify } from "jose";
+import {
+	callerIdentitySchema,
+	type CallerIdentity,
+} from "./caller-identity.ts";
 
 interface CloudflareConfig {
 	teamDomain: string;
@@ -7,7 +11,7 @@ interface CloudflareConfig {
 
 export function createCloudflareVerifier(
 	config: CloudflareConfig,
-): (token: string) => Promise<JWTPayload> {
+): (token: string) => Promise<CallerIdentity> {
 	const JWKS = createRemoteJWKSet(
 		new URL("cdn-cgi/access/certs", config.teamDomain),
 	);
@@ -18,6 +22,9 @@ export function createCloudflareVerifier(
 			audience: config.policyAud,
 		});
 
-		return payload;
+		return callerIdentitySchema.parse({
+			userId: payload.sub,
+			email: payload.email,
+		});
 	};
 }
