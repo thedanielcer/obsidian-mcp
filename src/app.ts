@@ -3,6 +3,7 @@ import type { AppConfig } from "./config/env.ts";
 import { healthHandler } from "./http/health.route.ts";
 import { createMcpHttpHandler } from "./mcp/http-handler.ts";
 import { createAuthMiddleware } from "./auth/cloudflare.middleware.ts";
+import { VaultService } from "./vault/vault.service.ts";
 
 export function createApp(config: AppConfig) {
 	const app = createMcpExpressApp({
@@ -10,7 +11,9 @@ export function createApp(config: AppConfig) {
 		allowedHosts: config.allowedHosts,
 	});
 
-	const mcpHttpHandler = createMcpHttpHandler();
+	const vaultService = new VaultService(config.vaultDir);
+
+	const mcpHttpHandler = createMcpHttpHandler(vaultService);
 	const authMiddleware = createAuthMiddleware(config);
 
 	app.get("/health", healthHandler);

@@ -2,6 +2,9 @@ import { loadEnvFile } from "node:process";
 import * as z from "zod";
 
 const appConfigSchema = z.object({
+	nodeEnv: z
+		.enum(["development", "production", "test"])
+		.default("production"),
 	host: z.string().trim().min(1).default("0.0.0.0"),
 	port: z.coerce.number().int().min(1).max(65535).default(3000),
 	teamDomain: z
@@ -15,6 +18,10 @@ const appConfigSchema = z.object({
 			value.split(",").map((hostname) => hostname.trim().toLowerCase()),
 		)
 		.pipe(z.array(z.hostname()).min(1)),
+	vaultDir: z
+		.string()
+		.trim()
+		.default("/home/daniel/obsidian-livesync-cli/vault"),
 });
 
 export type AppConfig = z.infer<typeof appConfigSchema>;
@@ -37,10 +44,12 @@ export function loadConfig(env?: NodeJS.ProcessEnv): AppConfig {
 	}
 
 	return appConfigSchema.parse({
+		nodeEnv: env.NODE_ENV,
 		host: env.HOST,
 		port: env.PORT,
 		teamDomain: env.TEAM_DOMAIN,
 		policyAud: env.POLICY_AUD,
 		allowedHosts: env.ALLOWED_HOSTS,
+		vaultDir: env.VAULT_DIR,
 	});
 }
