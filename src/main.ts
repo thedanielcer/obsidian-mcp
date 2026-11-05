@@ -1,10 +1,12 @@
 import { createApp } from "./app.ts";
 import { loadConfig } from "./config/env.ts";
+import { createLogger } from "./logger.ts";
 
 const config = loadConfig();
-const app = createApp(config);
+const logger = createLogger(config);
+const app = createApp(config, logger);
 const { host, port } = config;
 
 app.listen(port, host, () => {
-	console.log(`Obsidian MCP server listening at http://${host}:${port}/`);
+	logger.info({ host, port }, "Obsidian MCP server listening");
 });

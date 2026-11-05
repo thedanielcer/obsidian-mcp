@@ -5,6 +5,9 @@ const appConfigSchema = z.object({
 	nodeEnv: z
 		.enum(["development", "production", "test"])
 		.default("production"),
+	logLevel: z
+		.enum(["trace", "debug", "info", "warn", "error", "fatal", "silent"])
+		.default("info"),
 	host: z.string().trim().min(1).default("0.0.0.0"),
 	port: z.coerce.number().int().min(1).max(65535).default(3000),
 	teamDomain: z
@@ -45,6 +48,7 @@ export function loadConfig(env?: NodeJS.ProcessEnv): AppConfig {
 
 	return appConfigSchema.parse({
 		nodeEnv: env.NODE_ENV,
+		logLevel: env.LOG_LEVEL,
 		host: env.HOST,
 		port: env.PORT,
 		teamDomain: env.TEAM_DOMAIN,

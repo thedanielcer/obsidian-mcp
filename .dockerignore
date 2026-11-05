@@ -6,5 +6,7 @@
 **/.vscode
 **/*.log
 **/dist
+**/coverage
+**/tests
 README.md
 **/.github
