@@ -136,16 +136,6 @@ export class VaultService {
 		let i = 0;
 
 		let array: Outline[][] = [];
-		const getLevelSizes = () =>
-			Array.from({ length: 6 }, (_, level) =>
-				Array.isArray(array[level]) ? array[level].length : null,
-			);
-		const getHeadingsByLevel = () =>
-			Array.from({ length: 6 }, (_, level) =>
-				Array.isArray(array[level])
-					? array[level].map((heading: Outline) => heading.name)
-					: null,
-			);
 
 		const outlineFunciton = (match: RegExpExecArray | null) => {
 			if (match && match[2] && match[1]) {
@@ -164,8 +154,6 @@ export class VaultService {
 						levelInitialized: Array.isArray(
 							array[currentMatchLevel],
 						),
-						levelSizes: getLevelSizes(),
-						headingsByLevel: getHeadingsByLevel(),
 					},
 					"Matched outline heading",
 				);
@@ -175,8 +163,6 @@ export class VaultService {
 						{
 							fromHeadingLevel: lastMatchLevel + 1,
 							toHeadingLevel: currentMatchLevel + 1,
-							levelSizes: getLevelSizes(),
-							headingsByLevel: getHeadingsByLevel(),
 							array,
 						},
 						"Making node",
@@ -194,8 +180,6 @@ export class VaultService {
 								topLevelHeadings: outline.map(
 									(heading) => heading.name,
 								),
-								levelSizes: getLevelSizes(),
-								headingsByLevel: getHeadingsByLevel(),
 								node,
 								array,
 							},
@@ -265,8 +249,6 @@ export class VaultService {
 					{
 						headingText: match[2],
 						headingLevel: currentMatchLevel + 1,
-						levelSizes: getLevelSizes(),
-						headingsByLevel: getHeadingsByLevel(),
 						array,
 					},
 					"Stored outline heading",
@@ -318,8 +300,6 @@ export class VaultService {
 					// nodeHeading: node?.name,
 					topLevelOutlineCount: outline.length,
 					topLevelHeadings: outline.map((heading) => heading.name),
-					levelSizes: getLevelSizes(),
-					headingsByLevel: getHeadingsByLevel(),
 					node,
 					array,
 				},
@@ -335,13 +315,13 @@ export class VaultService {
 				finalLineIsHeading: finalLineMatch !== null,
 				finalLineHeadingText: finalLineMatch?.[2],
 				finalLineHeadingLevel: finalLineMatch?.[1]?.length,
-				levelSizes: getLevelSizes(),
-				headingsByLevel: getHeadingsByLevel(),
 				topLevelOutlineCount: outline.length,
 				topLevelHeadings: outline.map((heading) => heading.name),
 			},
 			"Finished reading note for outline",
 		);
+
+		array.sort((a, b) => (a === null ? 1 : 0) - (b === null ? 1 : 0));
 
 		if (array[0]) finalOutline.outline = array[0];
 
@@ -353,8 +333,6 @@ export class VaultService {
 				),
 				accumulatedOutlineCount: outline.length,
 				accumulatedHeadings: outline.map((heading) => heading.name),
-				levelSizes: getLevelSizes(),
-				headingsByLevel: getHeadingsByLevel(),
 				finalOutline,
 			},
 			"Finished building note outline",
@@ -363,13 +341,36 @@ export class VaultService {
 	}
 
 	private makeNode(array: Outline[][]): Outline[][] | undefined {
+		if (!array[0]) {
+			array.shift();
+		}
+
 		const reversedArray = [...array].reverse();
 
 		for (const [i, outlines] of reversedArray.entries()) {
 			if (outlines.length === 0) continue;
 
 			const parent = reversedArray[i + 1]?.at(-1);
-			if (!parent) return reversedArray.reverse();
+			if (!parent) {
+				if (i !== reversedArray.length) {
+					reversedArray.sort(
+						(a, b) => (a === null ? 1 : 0) - (b === null ? 1 : 0),
+					);
+					let current = outlines[i];
+					if (!current) {
+						current = outlines.at(-1);
+						if (!current) return;
+					}
+
+					const newParent = reversedArray[i + 1]?.at(-1);
+					if (!newParent) return reversedArray.reverse();
+
+					newParent.outline.push(current);
+					reversedArray[i] = [];
+					continue;
+				}
+				return reversedArray.reverse();
+			}
 
 			const current = outlines.at(-1);
 			if (!current) return;

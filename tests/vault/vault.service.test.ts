@@ -231,7 +231,7 @@ describe("VaultService", () => {
 			const notePath = join(vaultDir, "starts-at-level-two.md");
 			await writeFile(
 				notePath,
-				"## Starts at level two\n### Nested below it",
+				"## Starts at level two\n### Nested below it\n# Another parent\n## Its child",
 			);
 
 			await expect(
@@ -242,6 +242,10 @@ describe("VaultService", () => {
 					{
 						name: "Starts at level two",
 						outline: [{ name: "Nested below it", outline: [] }],
+					},
+					{
+						name: "Another parent",
+						outline: [{ name: "Its child", outline: [] }],
 					},
 				],
 			});
