@@ -153,6 +153,10 @@ describe("VaultService", () => {
 			await writeFile(
 				notePath,
 				[
+					"```JSON",
+					"# Fake heading",
+					"## Second Fake heading",
+					"```",
 					"# Parent",
 					"Some body text",
 					"## Child",
@@ -165,11 +169,15 @@ describe("VaultService", () => {
 					"### Grandchild to second child of second parent",
 					"# Third parent",
 					"## Child to third parent",
+					"```JSON",
+					"# Fake heading",
+					"## Second Fake heading",
+					"```",
 					"### Grandchild to child to third parent",
-					// "```JSON",
-					// "# Fake heading",
-					// "## Second Fake heading",
-					// "```",
+					"```JSON",
+					"# Fake heading",
+					"## Second Fake heading",
+					"```",
 				].join("\n"),
 			);
 

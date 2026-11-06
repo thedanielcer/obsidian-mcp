@@ -131,9 +131,9 @@ export class VaultService {
 
 		let remainder = "";
 		let lastMatchLevel = 0;
-		let chunkNumber = 0;
 		let lineNumber = 0;
 		let i = 0;
+		let isInCodeBlock = false;
 
 		let array: Outline[][] = [];
 
@@ -145,7 +145,6 @@ export class VaultService {
 
 				this.logger.debug(
 					{
-						chunkNumber,
 						lineNumber,
 						headingText: match[2],
 						headingLevel: currentMatchLevel + 1,
@@ -257,7 +256,6 @@ export class VaultService {
 		};
 
 		for await (const chunk of stream) {
-			chunkNumber += 1;
 			const text = remainder + chunk;
 			const lines = text.split(/\r?\n/);
 			this.logger.debug({ lines }, "Lines");
@@ -267,7 +265,6 @@ export class VaultService {
 
 			this.logger.debug(
 				{
-					chunkNumber,
 					chunkLength: chunk.length,
 					completeLineCount: lines.length,
 					remainderLength: remainder.length,
@@ -278,6 +275,25 @@ export class VaultService {
 			for (const line of lines) {
 				lineNumber += 1;
 				this.logger.debug({ line }, "Line");
+				const codeBlockMatch = /^[ \t]{0,3}`{3,}[^\r\n]*$/.exec(line);
+				if (isInCodeBlock && !codeBlockMatch) {
+					this.logger.debug("WE'RE IN A CODEBLOCK");
+					continue;
+				} else if (codeBlockMatch && !isInCodeBlock) {
+					this.logger.debug(
+						{ codeBlockMatch, isInCodeBlock },
+						"ENTERING CODE BLOCK",
+					);
+					isInCodeBlock = true;
+					continue;
+				} else if (codeBlockMatch && isInCodeBlock) {
+					this.logger.debug(
+						{ codeBlockMatch, isInCodeBlock },
+						"EXITING CODE BLOCK",
+					);
+					isInCodeBlock = false;
+					continue;
+				}
 				const match = /^(#{1,6})[ \t]+(.+?)\s*$/.exec(line);
 				outlineFunciton(match);
 
@@ -309,7 +325,6 @@ export class VaultService {
 
 		this.logger.debug(
 			{
-				chunkCount: chunkNumber,
 				processedLineCount: lineNumber,
 				remainderLength: remainder.length,
 				finalLineIsHeading: finalLineMatch !== null,
