@@ -14,7 +14,7 @@ enum HeadingLevels {
 
 export type Outline = {
 	name: string;
-	// start: number;
+	start: number;
 	// end: number;
 	outline: Outline[];
 };
@@ -193,6 +193,7 @@ export class VaultService {
 							array[HeadingLevels.firstLevel] = [];
 						array[HeadingLevels.firstLevel].push({
 							name: match[2],
+							start: lineNumber,
 							outline: [],
 						});
 						break;
@@ -202,6 +203,7 @@ export class VaultService {
 							array[HeadingLevels.secondLevel] = [];
 						array[HeadingLevels.secondLevel].push({
 							name: match[2],
+							start: lineNumber,
 							outline: [],
 						});
 						break;
@@ -211,6 +213,7 @@ export class VaultService {
 							array[HeadingLevels.thirdLevel] = [];
 						array[HeadingLevels.thirdLevel].push({
 							name: match[2],
+							start: lineNumber,
 							outline: [],
 						});
 						break;
@@ -220,6 +223,7 @@ export class VaultService {
 							array[HeadingLevels.fourthLevel] = [];
 						array[HeadingLevels.fourthLevel].push({
 							name: match[2],
+							start: lineNumber,
 							outline: [],
 						});
 						break;
@@ -229,6 +233,7 @@ export class VaultService {
 							array[HeadingLevels.fifthLevel] = [];
 						array[HeadingLevels.fifthLevel].push({
 							name: match[2],
+							start: lineNumber,
 							outline: [],
 						});
 					case HeadingLevels.sixthLevel:
@@ -237,6 +242,7 @@ export class VaultService {
 							array[HeadingLevels.sixthLevel] = [];
 						array[HeadingLevels.sixthLevel].push({
 							name: match[2],
+							start: lineNumber,
 							outline: [],
 						});
 						break;
@@ -303,6 +309,7 @@ export class VaultService {
 
 		this.logger.debug({ remainder }, "Remainder");
 
+		lineNumber += 1;
 		const finalLineMatch = /^(#{1,6})[ \t]+(.+?)\s*$/.exec(remainder);
 		this.logger.debug({ finalLineMatch }, "Final line match");
 		outlineFunciton(finalLineMatch);
@@ -312,8 +319,6 @@ export class VaultService {
 
 			this.logger.debug(
 				{
-					nodeCreated: node !== undefined,
-					// nodeHeading: node?.name,
 					topLevelOutlineCount: outline.length,
 					topLevelHeadings: outline.map((heading) => heading.name),
 					node,

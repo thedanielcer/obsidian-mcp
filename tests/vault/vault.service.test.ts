@@ -186,31 +186,44 @@ describe("VaultService", () => {
 				outline: [
 					{
 						name: "Parent",
+						start: 5,
 						outline: [
 							{
 								name: "Child",
-								outline: [{ name: "Grandchild", outline: [] }],
+								start: 7,
+								outline: [
+									{
+										name: "Grandchild",
+										start: 8,
+										outline: [],
+									},
+								],
 							},
-							{ name: "Second child", outline: [] },
+							{ name: "Second child", start: 9, outline: [] },
 						],
 					},
 					{
 						name: "Second parent",
+						start: 10,
 						outline: [
 							{
 								name: "Child to second parent",
+								start: 11,
 								outline: [
 									{
 										name: "Grandchild to child of second parent",
+										start: 12,
 										outline: [],
 									},
 								],
 							},
 							{
 								name: "Second child to second parent",
+								start: 13,
 								outline: [
 									{
 										name: "Grandchild to second child of second parent",
+										start: 14,
 										outline: [],
 									},
 								],
@@ -219,12 +232,15 @@ describe("VaultService", () => {
 					},
 					{
 						name: "Third parent",
+						start: 15,
 						outline: [
 							{
 								name: "Child to third parent",
+								start: 16,
 								outline: [
 									{
 										name: "Grandchild to child to third parent",
+										start: 21,
 										outline: [],
 									},
 								],
@@ -249,11 +265,15 @@ describe("VaultService", () => {
 				outline: [
 					{
 						name: "Starts at level two",
-						outline: [{ name: "Nested below it", outline: [] }],
+						start: 1,
+						outline: [
+							{ name: "Nested below it", start: 2, outline: [] },
+						],
 					},
 					{
 						name: "Another parent",
-						outline: [{ name: "Its child", outline: [] }],
+						start: 3,
+						outline: [{ name: "Its child", start: 4, outline: [] }],
 					},
 				],
 			});
@@ -270,7 +290,14 @@ describe("VaultService", () => {
 				outline: [
 					{
 						name: "Parent",
-						outline: [{ name: "Level three child", outline: [] }],
+						start: 1,
+						outline: [
+							{
+								name: "Level three child",
+								start: 2,
+								outline: [],
+							},
+						],
 					},
 				],
 			});
@@ -284,7 +311,7 @@ describe("VaultService", () => {
 				service.getOutline("no-trailing-newline.md"),
 			).resolves.toEqual({
 				notePath: await realpath(notePath),
-				outline: [{ name: "Final heading", outline: [] }],
+				outline: [{ name: "Final heading", start: 2, outline: [] }],
 			});
 		});
 	});
