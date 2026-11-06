@@ -9,5 +9,8 @@
       "strings": "off"
     },
     "editor.suggestOnTriggerCharacters": true
+  },
+  "vitest.nodeEnv": {
+    "TEST_LOG_LEVEL": "debug"
   }
 }

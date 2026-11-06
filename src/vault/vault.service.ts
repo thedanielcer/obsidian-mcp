@@ -129,6 +129,12 @@ export class VaultService {
 			outline: [],
 		};
 
+		let remainder = "";
+		let lastMatchLevel = 0;
+		let chunkNumber = 0;
+		let lineNumber = 0;
+		let i = 0;
+
 		let array: Outline[][] = [];
 		const getLevelSizes = () =>
 			Array.from({ length: 6 }, (_, level) =>
@@ -141,15 +147,138 @@ export class VaultService {
 					: null,
 			);
 
-		let remainder = "";
-		let lastMatchLevel: number = 0;
-		let chunkNumber = 0;
-		let lineNumber = 0;
+		const outlineFunciton = (match: RegExpExecArray | null) => {
+			if (match && match[2] && match[1]) {
+				const currentMatchLevel = match[1].length - 1;
+				const previousMatchLevel = lastMatchLevel;
+				if (i === 0) lastMatchLevel = 0;
+
+				this.logger.debug(
+					{
+						chunkNumber,
+						lineNumber,
+						headingText: match[2],
+						headingLevel: currentMatchLevel + 1,
+						previousHeadingLevel: previousMatchLevel + 1,
+						effectivePreviousHeadingLevel: lastMatchLevel + 1,
+						levelInitialized: Array.isArray(
+							array[currentMatchLevel],
+						),
+						levelSizes: getLevelSizes(),
+						headingsByLevel: getHeadingsByLevel(),
+					},
+					"Matched outline heading",
+				);
+
+				if (lastMatchLevel > currentMatchLevel) {
+					this.logger.debug(
+						{
+							fromHeadingLevel: lastMatchLevel + 1,
+							toHeadingLevel: currentMatchLevel + 1,
+							levelSizes: getLevelSizes(),
+							headingsByLevel: getHeadingsByLevel(),
+							array,
+						},
+						"Making node",
+					);
+
+					const node = this.makeNode(array);
+					if (node) {
+						array = node;
+
+						this.logger.debug(
+							{
+								nodeCreated: node !== undefined,
+								// nodeHeading: node?.name,
+								topLevelOutlineCount: outline.length,
+								topLevelHeadings: outline.map(
+									(heading) => heading.name,
+								),
+								levelSizes: getLevelSizes(),
+								headingsByLevel: getHeadingsByLevel(),
+								node,
+								array,
+							},
+							"Collapsed accumulated outline levels",
+						);
+					}
+				}
+				switch (currentMatchLevel) {
+					case HeadingLevels.firstLevel:
+						lastMatchLevel = HeadingLevels.firstLevel;
+						if (!array[HeadingLevels.firstLevel])
+							array[HeadingLevels.firstLevel] = [];
+						array[HeadingLevels.firstLevel].push({
+							name: match[2],
+							outline: [],
+						});
+						break;
+					case HeadingLevels.secondLevel:
+						lastMatchLevel = HeadingLevels.secondLevel;
+						if (!array[HeadingLevels.secondLevel])
+							array[HeadingLevels.secondLevel] = [];
+						array[HeadingLevels.secondLevel].push({
+							name: match[2],
+							outline: [],
+						});
+						break;
+					case HeadingLevels.thirdLevel:
+						lastMatchLevel = HeadingLevels.thirdLevel;
+						if (!array[HeadingLevels.thirdLevel])
+							array[HeadingLevels.thirdLevel] = [];
+						array[HeadingLevels.thirdLevel].push({
+							name: match[2],
+							outline: [],
+						});
+						break;
+					case HeadingLevels.fourthLevel:
+						lastMatchLevel = HeadingLevels.fourthLevel;
+						if (!array[HeadingLevels.fourthLevel])
+							array[HeadingLevels.fourthLevel] = [];
+						array[HeadingLevels.fourthLevel].push({
+							name: match[2],
+							outline: [],
+						});
+						break;
+					case HeadingLevels.fifthLevel:
+						lastMatchLevel = HeadingLevels.fifthLevel;
+						if (!array[HeadingLevels.fifthLevel])
+							array[HeadingLevels.fifthLevel] = [];
+						array[HeadingLevels.fifthLevel].push({
+							name: match[2],
+							outline: [],
+						});
+					case HeadingLevels.sixthLevel:
+						lastMatchLevel = HeadingLevels.sixthLevel;
+						if (!array[HeadingLevels.sixthLevel])
+							array[HeadingLevels.sixthLevel] = [];
+						array[HeadingLevels.sixthLevel].push({
+							name: match[2],
+							outline: [],
+						});
+						break;
+					default:
+						break;
+				}
+
+				this.logger.debug(
+					{
+						headingText: match[2],
+						headingLevel: currentMatchLevel + 1,
+						levelSizes: getLevelSizes(),
+						headingsByLevel: getHeadingsByLevel(),
+						array,
+					},
+					"Stored outline heading",
+				);
+			}
+		};
 
 		for await (const chunk of stream) {
 			chunkNumber += 1;
 			const text = remainder + chunk;
 			const lines = text.split(/\r?\n/);
+			this.logger.debug({ lines }, "Lines");
 
 			// The last item might be only part of a line.
 			remainder = lines.pop() ?? "";
@@ -164,139 +293,39 @@ export class VaultService {
 				"Processing outline stream chunk",
 			);
 
-			for (const [i, line] of lines.entries()) {
+			for (const line of lines) {
 				lineNumber += 1;
+				this.logger.debug({ line }, "Line");
 				const match = /^(#{1,6})[ \t]+(.+?)\s*$/.exec(line);
+				outlineFunciton(match);
 
-				if (match && match[2] && match[1]) {
-					const currentMatchLevel = match[1].length - 1;
-					const previousMatchLevel = lastMatchLevel;
-					if (i === 0) lastMatchLevel = 0;
-
-					this.logger.debug(
-						{
-							chunkNumber,
-							lineNumber,
-							headingText: match[2],
-							headingLevel: currentMatchLevel + 1,
-							previousHeadingLevel: previousMatchLevel + 1,
-							effectivePreviousHeadingLevel: lastMatchLevel + 1,
-							levelInitialized: Array.isArray(
-								array[currentMatchLevel],
-							),
-							levelSizes: getLevelSizes(),
-							headingsByLevel: getHeadingsByLevel(),
-						},
-						"Matched outline heading",
-					);
-
-					if (lastMatchLevel > currentMatchLevel) {
-						this.logger.debug(
-							{
-								fromHeadingLevel: lastMatchLevel + 1,
-								toHeadingLevel: currentMatchLevel + 1,
-								levelSizes: getLevelSizes(),
-								headingsByLevel: getHeadingsByLevel(),
-							},
-							"Making node",
-						);
-
-						const node = this.makeNode(array);
-						if (node) {
-							outline.push(node);
-							// array = [];
-
-							this.logger.debug(
-								{
-									nodeCreated: node !== undefined,
-									nodeHeading: node?.name,
-									topLevelOutlineCount: outline.length,
-									topLevelHeadings: outline.map(
-										(heading) => heading.name,
-									),
-									levelSizes: getLevelSizes(),
-									headingsByLevel: getHeadingsByLevel(),
-									node,
-									outline,
-								},
-								"Collapsed accumulated outline levels",
-							);
-						}
-					}
-					switch (currentMatchLevel) {
-						case HeadingLevels.firstLevel:
-							lastMatchLevel = HeadingLevels.firstLevel;
-							this.logger.debug("pushing lol");
-							if (!array[HeadingLevels.firstLevel])
-								array[HeadingLevels.firstLevel] = [];
-							array[HeadingLevels.firstLevel].push({
-								name: match[2],
-								outline: [],
-							});
-							break;
-						case HeadingLevels.secondLevel:
-							lastMatchLevel = HeadingLevels.secondLevel;
-							if (!array[HeadingLevels.secondLevel])
-								array[HeadingLevels.secondLevel] = [];
-							array[HeadingLevels.secondLevel].push({
-								name: match[2],
-								outline: [],
-							});
-							break;
-						case HeadingLevels.thirdLevel:
-							lastMatchLevel = HeadingLevels.thirdLevel;
-							if (!array[HeadingLevels.thirdLevel])
-								array[HeadingLevels.thirdLevel] = [];
-							array[HeadingLevels.thirdLevel].push({
-								name: match[2],
-								outline: [],
-							});
-							break;
-						case HeadingLevels.fourthLevel:
-							lastMatchLevel = HeadingLevels.fourthLevel;
-							if (!array[HeadingLevels.fourthLevel])
-								array[HeadingLevels.fourthLevel] = [];
-							array[HeadingLevels.fourthLevel].push({
-								name: match[2],
-								outline: [],
-							});
-							break;
-						case HeadingLevels.fifthLevel:
-							lastMatchLevel = HeadingLevels.fifthLevel;
-							if (!array[HeadingLevels.fifthLevel])
-								array[HeadingLevels.fifthLevel] = [];
-							array[HeadingLevels.fifthLevel].push({
-								name: match[2],
-								outline: [],
-							});
-							break;
-						case HeadingLevels.sixthLevel:
-							lastMatchLevel = HeadingLevels.sixthLevel;
-							if (!array[HeadingLevels.sixthLevel])
-								array[HeadingLevels.sixthLevel] = [];
-							array[HeadingLevels.sixthLevel].push({
-								name: match[2],
-								outline: [],
-							});
-							break;
-						default:
-							break;
-					}
-
-					this.logger.debug(
-						{
-							headingText: match[2],
-							headingLevel: currentMatchLevel + 1,
-							levelSizes: getLevelSizes(),
-							headingsByLevel: getHeadingsByLevel(),
-						},
-						"Stored outline heading",
-					);
-				}
+				i++;
 			}
 		}
 
+		this.logger.debug({ remainder }, "Remainder");
+
 		const finalLineMatch = /^(#{1,6})[ \t]+(.+?)\s*$/.exec(remainder);
+		this.logger.debug({ finalLineMatch }, "Final line match");
+		outlineFunciton(finalLineMatch);
+		const node = this.makeNode(array);
+		if (node) {
+			array = node;
+
+			this.logger.debug(
+				{
+					nodeCreated: node !== undefined,
+					// nodeHeading: node?.name,
+					topLevelOutlineCount: outline.length,
+					topLevelHeadings: outline.map((heading) => heading.name),
+					levelSizes: getLevelSizes(),
+					headingsByLevel: getHeadingsByLevel(),
+					node,
+					array,
+				},
+				"Final collapse accumulated outline levels",
+			);
+		}
 
 		this.logger.debug(
 			{
@@ -314,12 +343,8 @@ export class VaultService {
 			"Finished reading note for outline",
 		);
 
-		// Process the final line if the file doesn't end with a newline.
-		// const match = /^(#{1,6})[ \t]+(.+?)\s*$/.exec(remainder);
-		// if (match && match[2]) {
-		// 	outline.push(match[2]);
-		// }
-		if (outline[0]) finalOutline.outline.push(outline[0]);
+		if (array[0]) finalOutline.outline = array[0];
+
 		this.logger.debug(
 			{
 				returnedOutlineCount: finalOutline.outline.length,
@@ -337,24 +362,20 @@ export class VaultService {
 		return finalOutline;
 	}
 
-	private makeNode(array: Outline[][]): Outline | undefined {
+	private makeNode(array: Outline[][]): Outline[][] | undefined {
 		const reversedArray = [...array].reverse();
 
 		for (const [i, outlines] of reversedArray.entries()) {
 			if (outlines.length === 0) continue;
 
-			const parent = reversedArray[i + 1]?.[0];
-			if (!parent) continue;
+			const parent = reversedArray[i + 1]?.at(-1);
+			if (!parent) return reversedArray.reverse();
 
-			parent.outline = outlines;
-		}
+			const current = outlines.at(-1);
+			if (!current) return;
 
-		const levelOneOutline = reversedArray.reverse()[0];
-		if (levelOneOutline) {
-			const outline = levelOneOutline[0];
-			if (outline) {
-				return outline;
-			}
+			parent.outline.push(current);
+			reversedArray[i] = [];
 		}
 	}
 
@@ -372,10 +393,5 @@ export class VaultService {
 			return false;
 		}
 		return notePath;
-	}
-
-	private isFirstLevel(level: string): boolean {
-		if (level === "#") return true;
-		return false;
 	}
 }

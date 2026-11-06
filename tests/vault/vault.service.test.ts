@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import pino from "pino";
+import pretty from "pino-pretty";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VaultService } from "../../src/vault/vault.service.ts";
 
@@ -14,10 +15,20 @@ describe("VaultService", () => {
 		testDir = await mkdtemp(join(tmpdir(), "obsidian-mcp-"));
 		vaultDir = join(testDir, "vault");
 		await mkdir(vaultDir);
-		service = new VaultService(
-			vaultDir,
-			pino({ level: process.env.TEST_LOG_LEVEL ?? "silent" }),
-		);
+		const logLevel = process.env.TEST_LOG_LEVEL ?? "silent";
+		const logger =
+			logLevel === "silent"
+				? pino({ level: "silent" })
+				: pino(
+						{ level: logLevel },
+						pretty({
+							colorize: true,
+							translateTime: "SYS:standard",
+							ignore: "pid,hostname",
+							sync: true,
+						}),
+					);
+		service = new VaultService(vaultDir, logger);
 	});
 
 	afterEach(async () => {
@@ -148,6 +159,17 @@ describe("VaultService", () => {
 					"### Grandchild",
 					"## Second child",
 					"# Second parent",
+					"## Child to second parent",
+					"### Grandchild to child of second parent",
+					"## Second child to second parent",
+					"### Grandchild to second child of second parent",
+					"# Third parent",
+					"## Child to third parent",
+					"### Grandchild to child to third parent",
+					// "```JSON",
+					// "# Fake heading",
+					// "## Second Fake heading",
+					// "```",
 				].join("\n"),
 			);
 
@@ -164,7 +186,43 @@ describe("VaultService", () => {
 							{ name: "Second child", outline: [] },
 						],
 					},
-					{ name: "Second parent", outline: [] },
+					{
+						name: "Second parent",
+						outline: [
+							{
+								name: "Child to second parent",
+								outline: [
+									{
+										name: "Grandchild to child of second parent",
+										outline: [],
+									},
+								],
+							},
+							{
+								name: "Second child to second parent",
+								outline: [
+									{
+										name: "Grandchild to second child of second parent",
+										outline: [],
+									},
+								],
+							},
+						],
+					},
+					{
+						name: "Third parent",
+						outline: [
+							{
+								name: "Child to third parent",
+								outline: [
+									{
+										name: "Grandchild to child to third parent",
+										outline: [],
+									},
+								],
+							},
+						],
+					},
 				],
 			});
 		});
