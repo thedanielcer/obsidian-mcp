@@ -57,7 +57,7 @@ describe("getNotePathByNoteName", () => {
 				unauthorizedIdentity,
 			),
 		).resolves.toEqual({
-			paths: [join("nested", "project-plan.md"), "project.md"],
+			paths: ["nested/project-plan.md", "project.md"],
 			pagination: { skip: 0, limit: 10, hasMore: false, nextSkip: 2 },
 		});
 	});

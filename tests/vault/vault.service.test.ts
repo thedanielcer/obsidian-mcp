@@ -1,14 +1,7 @@
 import { createHash } from "node:crypto";
-import {
-	mkdtemp,
-	mkdir,
-	readFile,
-	realpath,
-	rm,
-	writeFile,
-} from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import pino from "pino";
 import pretty from "pino-pretty";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -70,7 +63,7 @@ describe("VaultService", () => {
 			await expect(
 				service.getNotes(0, 50, unauthorizedIdentity),
 			).resolves.toEqual({
-				notes: ["a.md", "b.md", join("folder", "c.md")],
+				notes: ["a.md", "b.md", "folder/c.md"],
 				pagination: {
 					skip: 0,
 					limit: 50,
@@ -250,7 +243,7 @@ describe("VaultService", () => {
 					unauthorizedIdentity,
 				),
 			).resolves.toEqual({
-				notePath: await realpath(notePath),
+				notePath: relative(vaultDir, notePath).split(sep).join("/"),
 				content: expected,
 				version: createHash("sha256").update(expected).digest("hex"),
 			});
@@ -267,7 +260,9 @@ describe("VaultService", () => {
 			);
 
 			expect(Buffer.byteLength(result.content)).toBe(65_536);
-			expect(result.notePath).toBe(await realpath(notePath));
+			expect(result.notePath).toBe(
+				relative(vaultDir, notePath).split(sep).join("/"),
+			);
 			expect(result.version).toBe(
 				createHash("sha256").update(expected).digest("hex"),
 			);
@@ -529,7 +524,7 @@ describe("VaultService", () => {
 						unauthorizedIdentity,
 					),
 				).resolves.toEqual({
-					notePath: await realpath(notePath),
+					notePath: relative(vaultDir, notePath).split(sep).join("/"),
 					startLine: start,
 					endLine: end,
 					content: expected,
@@ -689,7 +684,7 @@ describe("VaultService", () => {
 			await expect(
 				service.getOutline("nested.md", unauthorizedIdentity),
 			).resolves.toEqual({
-				notePath: await realpath(notePath),
+				notePath: relative(vaultDir, notePath).split(sep).join("/"),
 				outline: [
 					{
 						name: "Parent",
@@ -775,7 +770,7 @@ describe("VaultService", () => {
 					unauthorizedIdentity,
 				),
 			).resolves.toEqual({
-				notePath: await realpath(notePath),
+				notePath: relative(vaultDir, notePath).split(sep).join("/"),
 				outline: [
 					{
 						name: "Starts at level two",
@@ -806,7 +801,7 @@ describe("VaultService", () => {
 			await expect(
 				service.getOutline("skipped-level.md", unauthorizedIdentity),
 			).resolves.toEqual({
-				notePath: await realpath(notePath),
+				notePath: relative(vaultDir, notePath).split(sep).join("/"),
 				outline: [
 					{
 						name: "Parent",
@@ -833,7 +828,7 @@ describe("VaultService", () => {
 					unauthorizedIdentity,
 				),
 			).resolves.toEqual({
-				notePath: await realpath(notePath),
+				notePath: relative(vaultDir, notePath).split(sep).join("/"),
 				outline: [
 					{ name: "Final heading", lineNumber: 2, outline: [] },
 				],

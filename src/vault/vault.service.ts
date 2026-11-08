@@ -1,5 +1,5 @@
 import { createReadStream, promises } from "node:fs";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { buffer } from "node:stream/consumers";
 import { StringDecoder } from "node:string_decoder";
@@ -11,6 +11,12 @@ import { createInterface } from "node:readline";
 import { createHash, randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import type { CallerIdentity } from "../auth/caller-identity.ts";
+
+import {
+	assertWithinVault,
+	resolveNotePath,
+	toNotePath,
+} from "./vault-paths.ts";
 
 enum HeadingLevels {
 	firstLevel,
@@ -98,7 +104,9 @@ export class VaultService {
 		private readonly logger: Logger,
 		private readonly vaultDir: string,
 		private readonly restrictionsService: RestrictionsService,
-	) {}
+	) {
+		this.vaultDir = resolve(vaultDir);
+	}
 
 	public async createNote(
 		path: string,
@@ -106,16 +114,7 @@ export class VaultService {
 	): Promise<{ ok: true }> {
 		const vaultPath = await promises.realpath(this.vaultDir);
 
-		const notePath = join(vaultPath, path);
-
-		const relativePath = relative(vaultPath, notePath);
-		if (
-			relativePath === ".." ||
-			relativePath.startsWith(`..${sep}`) ||
-			isAbsolute(relativePath)
-		) {
-			throw new Error("Note path must be inside the vault");
-		}
+		const notePath = resolveNotePath(vaultPath, path);
 
 		try {
 			await writeFile(notePath, content, { flag: "wx" });
@@ -147,7 +146,8 @@ export class VaultService {
 
 		this.logger.debug({ skip, limit }, "Getting notes");
 
-		const entries = await promises.readdir(this.vaultDir, {
+		const vaultPath = await promises.realpath(this.vaultDir);
+		const entries = await promises.readdir(vaultPath, {
 			recursive: true,
 			withFileTypes: true,
 		});
@@ -155,18 +155,18 @@ export class VaultService {
 		const paths = entries
 			.filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
 			.map((entry) =>
-				relative(this.vaultDir, join(entry.parentPath, entry.name)),
+				toNotePath(vaultPath, join(entry.parentPath, entry.name)),
 			)
 			.sort();
 
 		const allowedPaths =
 			await this.restrictionsService.filterRestrictedNotes(
-				paths.map((path) => join(this.vaultDir, path)),
+				paths.map((path) => join(vaultPath, path)),
 				identity,
 			);
 		const notes = allowedPaths
 			.slice(skip, skip + limit)
-			.map((path) => relative(this.vaultDir, path));
+			.map((path) => toNotePath(vaultPath, path));
 
 		return {
 			notes,
@@ -192,6 +192,7 @@ export class VaultService {
 			pagination: { skip, limit, hasMore: false, nextSkip: skip },
 		};
 
+		const vaultPath = await promises.realpath(this.vaultDir);
 		const args = [
 			"--files",
 			"-0",
@@ -200,7 +201,7 @@ export class VaultService {
 			"--sort",
 			"path",
 			"--",
-			this.vaultDir,
+			vaultPath,
 		];
 
 		let stdout: string;
@@ -226,7 +227,7 @@ export class VaultService {
 
 		const notes = allowedNotes
 			.slice(skip, skip + limit)
-			.map((path) => relative(this.vaultDir, path));
+			.map((path) => toNotePath(vaultPath, path));
 
 		return {
 			paths: notes,
@@ -278,7 +279,10 @@ export class VaultService {
 		}
 
 		return {
-			notePath: notePath,
+			notePath: toNotePath(
+				await promises.realpath(this.vaultDir),
+				notePath,
+			),
 			content: fileBuffer.toString("utf8"),
 			version: fileHash.update(fileBuffer).digest("hex"),
 		};
@@ -341,7 +345,10 @@ export class VaultService {
 		const content = targetLines.join("\n");
 		const versionHash = hash.digest("hex");
 		return {
-			notePath: notePath,
+			notePath: toNotePath(
+				await promises.realpath(this.vaultDir),
+				notePath,
+			),
 			startLine: startLine,
 			endLine: endLine,
 			content: content,
@@ -364,7 +371,10 @@ export class VaultService {
 
 		const outline: Outline[] = [];
 		const finalOutline: GetOutlineResult = {
-			notePath: notePath,
+			notePath: toNotePath(
+				await promises.realpath(this.vaultDir),
+				notePath,
+			),
 			outline: [],
 		};
 
@@ -619,7 +629,8 @@ export class VaultService {
 
 		searchArgs.push(caseSensitive ? "--case-sensitive" : "--ignore-case");
 		searchArgs.push("-e", query);
-		const fileNamesArgs = ["-l", "-0", ...searchArgs, "--", this.vaultDir];
+		const vaultPath = await promises.realpath(this.vaultDir);
+		const fileNamesArgs = ["-l", "-0", ...searchArgs, "--", vaultPath];
 
 		let stdout: string;
 		try {
@@ -706,7 +717,7 @@ export class VaultService {
 				}
 
 				matches.push({
-					path: event.data.path.text,
+					path: toNotePath(vaultPath, event.data.path.text),
 					line: event.data.line_number,
 					text: event.data.lines.text,
 				});
@@ -1010,16 +1021,10 @@ export class VaultService {
 	): Promise<string> {
 		const vaultPath = await promises.realpath(this.vaultDir);
 
-		const notePath = await promises.realpath(join(vaultPath, path));
-
-		const relativePath = relative(vaultPath, notePath);
-		if (
-			relativePath === ".." ||
-			relativePath.startsWith(`..${sep}`) ||
-			isAbsolute(relativePath)
-		) {
-			throw new Error("Note path must be inside the vault");
-		}
+		const notePath = await promises.realpath(
+			resolveNotePath(vaultPath, path),
+		);
+		assertWithinVault(vaultPath, notePath);
 
 		const validNotePath =
 			await this.restrictionsService.filterRestrictedNotes(
