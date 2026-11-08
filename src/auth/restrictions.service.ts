@@ -2,11 +2,13 @@ import { createReadStream } from "node:fs";
 import { readFile } from "node:fs/promises";
 import type { Logger } from "pino";
 import { z } from "zod";
+import type { CallerIdentity } from "./caller-identity.ts";
 
 export class RestrictionsService {
 	constructor(
 		private readonly logger: Logger,
 		private readonly restrictedNotesPathsJson: string,
+		private readonly canReadRestrictedNotes: Set<string>,
 	) {}
 
 	public async isRestricted(notePath: string): Promise<boolean> {
@@ -42,10 +44,17 @@ export class RestrictionsService {
 		return false;
 	}
 
-	public async filterRestrictedNotes(notePaths: string[]): Promise<string[]> {
+	public async filterRestrictedNotes(
+		notePaths: string[],
+		identity: CallerIdentity,
+	): Promise<string[]> {
+		if (this.canReadRestrictedNotes.has(identity.email)) return notePaths;
 		const schema = z.array(z.string());
 
-		const fileContents = await readFile(this.restrictedNotesPathsJson, "utf8");
+		const fileContents = await readFile(
+			this.restrictedNotesPathsJson,
+			"utf8",
+		);
 
 		const restrictedPathsSet = new Set(
 			schema.parse(JSON.parse(fileContents)),

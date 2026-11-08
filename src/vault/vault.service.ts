@@ -10,6 +10,7 @@ import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { createHash, randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
+import type { CallerIdentity } from "../auth/caller-identity.ts";
 
 enum HeadingLevels {
 	firstLevel,
@@ -140,6 +141,7 @@ export class VaultService {
 	public async getNotes(
 		skip: number = 0,
 		limit: number = 50,
+		identity: CallerIdentity,
 	): Promise<GetNotesResult> {
 		this.validatePagination(skip, limit);
 
@@ -160,6 +162,7 @@ export class VaultService {
 		const allowedPaths =
 			await this.restrictionsService.filterRestrictedNotes(
 				paths.map((path) => join(this.vaultDir, path)),
+				identity,
 			);
 		const notes = allowedPaths
 			.slice(skip, skip + limit)
@@ -180,6 +183,7 @@ export class VaultService {
 		noteName: string,
 		skip: number,
 		limit: number,
+		identity: CallerIdentity,
 	): Promise<GetNotePathByNoteNameResult> {
 		this.validatePagination(skip, limit);
 
@@ -214,7 +218,10 @@ export class VaultService {
 		if (fileMatches.length === 0) return result;
 
 		const allowedNotes =
-			await this.restrictionsService.filterRestrictedNotes(fileMatches);
+			await this.restrictionsService.filterRestrictedNotes(
+				fileMatches,
+				identity,
+			);
 		if (allowedNotes.length === 0) return result;
 
 		const notes = allowedNotes
@@ -232,7 +239,10 @@ export class VaultService {
 		};
 	}
 
-	public async readNote(path: string): Promise<ReadNoteResult> {
+	public async readNote(
+		path: string,
+		identity: CallerIdentity,
+	): Promise<ReadNoteResult> {
 		if (
 			!Number.isSafeInteger(this.readNoteMaxSize) ||
 			this.readNoteMaxSize < 1
@@ -242,7 +252,7 @@ export class VaultService {
 			);
 		}
 
-		const notePath = await this.validateAndFilterNote(path);
+		const notePath = await this.validateAndFilterNote(path, identity);
 
 		const fileStats = await promises.stat(notePath);
 		if (fileStats.size > this.readNoteMaxSize) {
@@ -278,6 +288,7 @@ export class VaultService {
 		path: string,
 		startLine: number,
 		endLine: number,
+		identity: CallerIdentity,
 	): Promise<ReadNoteLinesResult> {
 		if (
 			!Number.isSafeInteger(startLine) ||
@@ -290,7 +301,7 @@ export class VaultService {
 			);
 		}
 
-		const notePath = await this.validateAndFilterNote(path);
+		const notePath = await this.validateAndFilterNote(path, identity);
 
 		const stream = createReadStream(notePath, {
 			highWaterMark: 10 * 1024,
@@ -338,10 +349,13 @@ export class VaultService {
 		};
 	}
 
-	public async getOutline(path: string): Promise<GetOutlineResult> {
+	public async getOutline(
+		path: string,
+		identity: CallerIdentity,
+	): Promise<GetOutlineResult> {
 		this.logger.debug({ path }, "Getting note outline");
 
-		const notePath = await this.validateAndFilterNote(path);
+		const notePath = await this.validateAndFilterNote(path, identity);
 
 		const stream = createReadStream(notePath, {
 			encoding: "utf8",
@@ -591,6 +605,7 @@ export class VaultService {
 		caseSensitive: boolean,
 		skip: number,
 		limit: number,
+		identity: CallerIdentity,
 	): Promise<SearchNotesResult> {
 		this.validatePagination(skip, limit);
 
@@ -621,7 +636,10 @@ export class VaultService {
 		if (fileMatches.length === 0) return result;
 
 		const allowedNotes =
-			await this.restrictionsService.filterRestrictedNotes(fileMatches);
+			await this.restrictionsService.filterRestrictedNotes(
+				fileMatches,
+				identity,
+			);
 		if (allowedNotes.length === 0) return result;
 
 		const controller = new AbortController();
@@ -719,8 +737,9 @@ export class VaultService {
 		path: string,
 		content: string,
 		expectedVersion: string,
+		identity: CallerIdentity,
 	): Promise<{ ok: true }> {
-		const notePath = await this.validateAndFilterNote(path);
+		const notePath = await this.validateAndFilterNote(path, identity);
 
 		const stream = createReadStream(notePath, { highWaterMark: 10 * 1024 });
 		const hash = createHash("sha256");
@@ -751,6 +770,7 @@ export class VaultService {
 		end: number,
 		content: string,
 		expectedVersion: string,
+		identity: CallerIdentity,
 	): Promise<{ ok: true }> {
 		if (
 			!Number.isSafeInteger(start) ||
@@ -766,7 +786,7 @@ export class VaultService {
 			throw new TypeError("expectedVersion must be a SHA-256 hex digest");
 		}
 
-		const notePath = await this.validateAndFilterNote(path);
+		const notePath = await this.validateAndFilterNote(path, identity);
 		const originalStats = await promises.stat(notePath, { bigint: true });
 		const temporaryPath = join(
 			dirname(notePath),
@@ -880,8 +900,9 @@ export class VaultService {
 		path: string,
 		content: string,
 		expectedVersion: string,
+		identity: CallerIdentity,
 	): Promise<{ ok: true }> {
-		const notePath = await this.validateAndFilterNote(path);
+		const notePath = await this.validateAndFilterNote(path, identity);
 
 		const stream = createReadStream(notePath, { highWaterMark: 10 * 1024 });
 		const hash = createHash("sha256");
@@ -908,8 +929,9 @@ export class VaultService {
 		path: string,
 		content: string,
 		expectedVersion: string,
+		identity: CallerIdentity,
 	): Promise<{ ok: true }> {
-		const notePath = await this.validateAndFilterNote(path);
+		const notePath = await this.validateAndFilterNote(path, identity);
 
 		const hash = createHash("sha256");
 
@@ -982,7 +1004,10 @@ export class VaultService {
 		}
 	}
 
-	private async validateAndFilterNote(path: string): Promise<string> {
+	private async validateAndFilterNote(
+		path: string,
+		identity: CallerIdentity,
+	): Promise<string> {
 		const vaultPath = await promises.realpath(this.vaultDir);
 
 		const notePath = await promises.realpath(join(vaultPath, path));
@@ -997,7 +1022,10 @@ export class VaultService {
 		}
 
 		const validNotePath =
-			await this.restrictionsService.filterRestrictedNotes([notePath]);
+			await this.restrictionsService.filterRestrictedNotes(
+				[notePath],
+				identity,
+			);
 
 		if (validNotePath.length === 0) {
 			throw new Error("Note is restricted");
