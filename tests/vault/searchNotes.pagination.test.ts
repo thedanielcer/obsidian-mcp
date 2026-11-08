@@ -8,11 +8,12 @@ import { VaultService } from "../../src/vault/vault.service.ts";
 
 describe("searchNotes pagination with ripgrep", () => {
 	let vaultDir: string;
+	let restrictedPaths: string;
 	let service: VaultService;
 
 	beforeEach(async () => {
 		vaultDir = await mkdtemp(join(tmpdir(), "obsidian-search-pagination-"));
-		const restrictedPaths = join(vaultDir, "restrictions.json");
+		restrictedPaths = join(vaultDir, "restrictions.json");
 		await writeFile(restrictedPaths, "[]");
 		const logger = pino({ level: "silent" });
 		service = new VaultService(
@@ -124,6 +125,51 @@ describe("searchNotes pagination with ripgrep", () => {
 		).resolves.toEqual({
 			matches: [],
 			pagination: { skip: 0, limit: 2, hasMore: false, nextSkip: 0 },
+		});
+	});
+
+	it("filters frontmatter and JSON restrictions before paginating mixed results", async () => {
+		const restrictedByFrontmatter = join(
+			vaultDir,
+			"a-restricted-by-frontmatter.md",
+		);
+		const restrictedByJson = join(vaultDir, "b-restricted-by-json.md");
+		const firstPublic = join(vaultDir, "c-public.md");
+		const secondPublic = join(vaultDir, "d-public.md");
+
+		await writeFile(
+			restrictedByFrontmatter,
+			"---\nrestricted: true\n---\nneedle private 1\nneedle private 2\n",
+		);
+		await writeFile(
+			restrictedByJson,
+			"needle JSON-private 1\nneedle JSON-private 2\n",
+		);
+		await writeFile(firstPublic, "needle public 1\nneedle public 2\n");
+		await writeFile(secondPublic, "needle public 3\n");
+		await writeFile(restrictedPaths, JSON.stringify([restrictedByJson]));
+
+		const first = await service.searchNotes("needle", false, true, 0, 2);
+		const second = await service.searchNotes(
+			"needle",
+			false,
+			true,
+			first.pagination.nextSkip,
+			2,
+		);
+
+		expect(first).toEqual({
+			matches: [
+				{ path: firstPublic, line: 1, text: "needle public 1\n" },
+				{ path: firstPublic, line: 2, text: "needle public 2\n" },
+			],
+			pagination: { skip: 0, limit: 2, hasMore: true, nextSkip: 2 },
+		});
+		expect(second).toEqual({
+			matches: [
+				{ path: secondPublic, line: 1, text: "needle public 3\n" },
+			],
+			pagination: { skip: 2, limit: 2, hasMore: false, nextSkip: 3 },
 		});
 	});
 

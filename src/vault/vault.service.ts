@@ -1,12 +1,15 @@
 import { createReadStream, promises } from "node:fs";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { pipeline } from "node:stream/promises";
 import { buffer } from "node:stream/consumers";
+import { StringDecoder } from "node:string_decoder";
 import type { Logger } from "pino";
 import type { RestrictionsService } from "../auth/restrictions.service.ts";
 import { promisify } from "node:util";
 import { execFile, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 
 enum HeadingLevels {
 	firstLevel,
@@ -62,6 +65,11 @@ export type GetNotesResult = {
 	pagination: Pagination;
 };
 
+export type GetNotePathByNoteNameResult = {
+	paths: string[];
+	pagination: Pagination;
+};
+
 export type GetOutlineResult = {
 	notePath: string;
 	outline: Outline[];
@@ -70,6 +78,14 @@ export type GetOutlineResult = {
 export type SearchNotesResult = {
 	matches: Matches[];
 	pagination: Pagination;
+};
+
+export type ReadNoteLinesResult = {
+	notePath: string;
+	startLine: number;
+	endLine: number;
+	content: string;
+	version: string;
 };
 
 export class VaultService {
@@ -82,6 +98,44 @@ export class VaultService {
 		private readonly vaultDir: string,
 		private readonly restrictionsService: RestrictionsService,
 	) {}
+
+	public async createNote(
+		path: string,
+		content: string,
+	): Promise<{ ok: true }> {
+		const vaultPath = await promises.realpath(this.vaultDir);
+
+		const notePath = join(vaultPath, path);
+
+		const relativePath = relative(vaultPath, notePath);
+		if (
+			relativePath === ".." ||
+			relativePath.startsWith(`..${sep}`) ||
+			isAbsolute(relativePath)
+		) {
+			throw new Error("Note path must be inside the vault");
+		}
+
+		try {
+			await writeFile(notePath, content, { flag: "wx" });
+		} catch (error) {
+			if (
+				error instanceof Error &&
+				"code" in error &&
+				error.code === "EEXIST"
+			) {
+				throw new Error(
+					"That note already exists, choose a different note path, or use another appropiate tool",
+				);
+			} else {
+				throw error;
+			}
+		}
+
+		return {
+			ok: true,
+		};
+	}
 
 	public async getNotes(
 		skip: number = 0,
@@ -117,6 +171,62 @@ export class VaultService {
 				skip,
 				limit,
 				hasMore: skip + notes.length < allowedPaths.length,
+				nextSkip: skip + notes.length,
+			},
+		};
+	}
+
+	public async getNotePathByNoteName(
+		noteName: string,
+		skip: number,
+		limit: number,
+	): Promise<GetNotePathByNoteNameResult> {
+		this.validatePagination(skip, limit);
+
+		const result: GetNotePathByNoteNameResult = {
+			paths: [],
+			pagination: { skip, limit, hasMore: false, nextSkip: skip },
+		};
+
+		const args = [
+			"--files",
+			"-0",
+			"-g",
+			`*${noteName}*.md`,
+			"--sort",
+			"path",
+			"--",
+			this.vaultDir,
+		];
+
+		let stdout: string;
+		try {
+			const search = await this.execFileAsync("rg", args);
+			stdout = search.stdout;
+		} catch (error: unknown) {
+			if (error instanceof Error && "code" in error && error.code === 1)
+				return result;
+			throw error;
+		}
+
+		const fileMatches = stdout.split("\0").filter(Boolean);
+
+		if (fileMatches.length === 0) return result;
+
+		const allowedNotes =
+			await this.restrictionsService.filterRestrictedNotes(fileMatches);
+		if (allowedNotes.length === 0) return result;
+
+		const notes = allowedNotes
+			.slice(skip, skip + limit)
+			.map((path) => relative(this.vaultDir, path));
+
+		return {
+			paths: notes,
+			pagination: {
+				skip,
+				limit,
+				hasMore: skip + notes.length < allowedNotes.length,
 				nextSkip: skip + notes.length,
 			},
 		};
@@ -161,6 +271,70 @@ export class VaultService {
 			notePath: notePath,
 			content: fileBuffer.toString("utf8"),
 			version: fileHash.update(fileBuffer).digest("hex"),
+		};
+	}
+
+	public async readNoteLines(
+		path: string,
+		startLine: number,
+		endLine: number,
+	): Promise<ReadNoteLinesResult> {
+		if (
+			!Number.isSafeInteger(startLine) ||
+			!Number.isSafeInteger(endLine) ||
+			startLine < 1 ||
+			endLine < startLine
+		) {
+			throw new RangeError(
+				"startLine and endLine must be positive safe integers, and endLine must be greater than or equal to startLine",
+			);
+		}
+
+		const notePath = await this.validateAndFilterNote(path);
+
+		const stream = createReadStream(notePath, {
+			highWaterMark: 10 * 1024,
+		});
+
+		let linesRead = 0;
+		let remainder = "";
+		const targetLines: string[] = [];
+		const hash = createHash("sha256");
+		const decoder = new StringDecoder("utf8");
+
+		for await (const chunk of stream) {
+			hash.update(chunk);
+			const text = remainder + decoder.write(chunk);
+			const lines = text.split(/\r?\n/);
+
+			// The last item might be only part of a line.
+			remainder = lines.pop() ?? "";
+
+			for (const line of lines) {
+				linesRead++;
+
+				if (linesRead >= startLine && linesRead <= endLine) {
+					targetLines.push(line);
+				}
+			}
+		}
+
+		remainder += decoder.end();
+		if (remainder.length > 0) {
+			linesRead++;
+			if (linesRead >= startLine && linesRead <= endLine) {
+				targetLines.push(remainder);
+			}
+		}
+
+		const content = targetLines.join("\n");
+		const versionHash = hash.digest("hex");
+		return {
+			notePath: notePath,
+			startLine: startLine,
+			endLine: endLine,
+			content: content,
+			version: versionHash,
 		};
 	}
 
@@ -541,6 +715,219 @@ export class VaultService {
 		return result;
 	}
 
+	public async replaceNote(
+		path: string,
+		content: string,
+		expectedVersion: string,
+	): Promise<{ ok: true }> {
+		const notePath = await this.validateAndFilterNote(path);
+
+		const stream = createReadStream(notePath, { highWaterMark: 10 * 1024 });
+		const hash = createHash("sha256");
+
+		for await (const chunk of stream) {
+			hash.update(chunk);
+		}
+
+		if (expectedVersion !== hash.digest("hex"))
+			throw new Error(
+				"VERSION_CONFLICT: The note has changed; read it again before editing",
+			);
+
+		await writeFile(notePath, content, { flag: "w" });
+
+		return { ok: true };
+	}
+
+	/**
+	 * Replace an inclusive, 1-based range; empty content deletes the lines.
+	 * Replacement newlines follow the note's first newline style (LF by default).
+	 * A terminated range keeps its final separator unless the replacement is empty
+	 * or already ends in a newline. A final unterminated range adds no separator.
+	 */
+	public async replaceNoteLines(
+		path: string,
+		start: number,
+		end: number,
+		content: string,
+		expectedVersion: string,
+	): Promise<{ ok: true }> {
+		if (
+			!Number.isSafeInteger(start) ||
+			!Number.isSafeInteger(end) ||
+			start < 1 ||
+			end < start
+		) {
+			throw new RangeError(
+				"start and end must be positive safe integers, and end must be greater than or equal to start",
+			);
+		}
+		if (!/^[a-f0-9]{64}$/i.test(expectedVersion)) {
+			throw new TypeError("expectedVersion must be a SHA-256 hex digest");
+		}
+
+		const notePath = await this.validateAndFilterNote(path);
+		const originalStats = await promises.stat(notePath, { bigint: true });
+		const temporaryPath = join(
+			dirname(notePath),
+			`.obsidian-mcp-${randomUUID()}.tmp`,
+		);
+		const temporaryFile = await promises.open(temporaryPath, "wx", 0o600);
+
+		async function* replaceLines() {
+			const source = createReadStream(notePath, {
+				highWaterMark: 64 * 1024,
+			});
+			const hash = createHash("sha256");
+			let line = 1;
+			let previousByte: number | undefined;
+			let newline: string | undefined;
+
+			function* replacement(terminated: boolean) {
+				const separator = newline ?? "\n";
+				yield content.replace(/\r?\n/g, separator);
+				if (
+					terminated &&
+					content.length > 0 &&
+					!content.endsWith("\n")
+				) {
+					yield separator;
+				}
+			}
+
+			for await (const chunk of source) {
+				// Hash all original bytes, including the range being discarded.
+				hash.update(chunk);
+				let copyFrom = 0;
+				for (
+					let offset = chunk.indexOf(0x0a);
+					offset !== -1;
+					offset = chunk.indexOf(0x0a, offset + 1)
+				) {
+					const beforeLF =
+						offset === 0 ? previousByte : chunk[offset - 1];
+					newline ??= beforeLF === 0x0d ? "\r\n" : "\n";
+					if (line === start - 1) {
+						yield chunk.subarray(copyFrom, offset + 1);
+						copyFrom = offset + 1;
+					}
+					if (line === end) {
+						yield* replacement(true);
+						copyFrom = offset + 1;
+					}
+					line++;
+				}
+				if (line < start || line > end) {
+					yield chunk.subarray(copyFrom);
+				}
+				previousByte = chunk[chunk.length - 1];
+			}
+
+			if (hash.digest("hex") !== expectedVersion.toLowerCase()) {
+				throw new Error(
+					"VERSION_CONFLICT: The note has changed; read it again before editing",
+				);
+			}
+			// A trailing newline terminates the last line; it does not add a line.
+			const unterminated =
+				previousByte !== undefined && previousByte !== 0x0a;
+			const totalLines = line - 1 + (unterminated ? 1 : 0);
+			if (end > totalLines) {
+				throw new RangeError(
+					`Line range ${start}-${end} exceeds the note's ${totalLines} lines`,
+				);
+			}
+			if (line === end && unterminated) {
+				yield* replacement(false);
+			}
+		}
+
+		try {
+			// Pipeline handles backpressure and closes the streams on failures.
+			await pipeline(replaceLines(), temporaryFile.createWriteStream());
+			await promises.chmod(
+				temporaryPath,
+				Number(originalStats.mode & 0o777n),
+			);
+			const currentStats = await promises.stat(notePath, {
+				bigint: true,
+			});
+			if (
+				currentStats.dev !== originalStats.dev ||
+				currentStats.ino !== originalStats.ino ||
+				currentStats.size !== originalStats.size ||
+				currentStats.mtimeNs !== originalStats.mtimeNs ||
+				currentStats.ctimeNs !== originalStats.ctimeNs
+			) {
+				throw new Error(
+					"VERSION_CONFLICT: The note changed during the edit; read it again before editing",
+				);
+			}
+			// Same-directory rename commits only the completed, verified replacement.
+			// External writers can still race between the metadata check and rename.
+			await promises.rename(temporaryPath, notePath);
+			return { ok: true };
+		} finally {
+			try {
+				await temporaryFile.close();
+			} finally {
+				await promises.rm(temporaryPath, { force: true });
+			}
+		}
+	}
+
+	public async appendToNote(
+		path: string,
+		content: string,
+		expectedVersion: string,
+	): Promise<{ ok: true }> {
+		const notePath = await this.validateAndFilterNote(path);
+
+		const stream = createReadStream(notePath, { highWaterMark: 10 * 1024 });
+		const hash = createHash("sha256");
+
+		for await (const chunk of stream) {
+			hash.update(chunk);
+		}
+
+		if (expectedVersion !== hash.digest("hex"))
+			throw new Error(
+				"VERSION_CONFLICT: The note has changed; read it again before editing",
+			);
+
+		try {
+			await writeFile(notePath, content, { flag: "a" });
+		} catch (error) {
+			throw new Error("Failed to append to the file");
+		}
+
+		return { ok: true };
+	}
+
+	public async beautifyNote(
+		path: string,
+		content: string,
+		expectedVersion: string,
+	): Promise<{ ok: true }> {
+		const notePath = await this.validateAndFilterNote(path);
+
+		const hash = createHash("sha256");
+
+		const fileBuffer = await buffer(createReadStream(notePath));
+		hash.update(fileBuffer);
+
+		if (expectedVersion !== hash.digest("hex"))
+			throw new Error(
+				"VERSION_CONFLICT: The note has changed; read it again before editing",
+			);
+
+		const finalContent = content + fileBuffer.toString("utf8");
+
+		await writeFile(notePath, finalContent, { flag: "w" });
+
+		return { ok: true };
+	}
+
 	private validatePagination(skip: number, limit: number): void {
 		if (
 			!Number.isSafeInteger(skip) ||
@@ -617,7 +1004,9 @@ export class VaultService {
 		}
 
 		if (!validNotePath[0])
-			throw new Error("Note is gone... somehow idk man");
+			throw new Error(
+				"Note is gone... somehow idk man, this shouldn't have happended, try something else",
+			);
 
 		return validNotePath[0];
 	}

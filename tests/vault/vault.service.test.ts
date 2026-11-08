@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import {
+	mkdtemp,
+	mkdir,
+	readFile,
+	realpath,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import pino from "pino";
@@ -250,6 +257,264 @@ describe("VaultService", () => {
 		});
 	});
 
+	describe("createNote", () => {
+		it("creates a note when the file does not exist", async () => {
+			const notePath = join(vaultDir, "new-note.md");
+			const content = "# Newly created note\n";
+
+			await expect(
+				service.createNote("new-note.md", content),
+			).resolves.toEqual({ ok: true });
+			await expect(readFile(notePath, "utf8")).resolves.toBe(content);
+		});
+	});
+
+	describe("replaceNote", () => {
+		it("rejects when the note does not exist", async () => {
+			await expect(
+				service.replaceNote(
+					"missing.md",
+					"replacement",
+					createHash("sha256").update("").digest("hex"),
+				),
+			).rejects.toMatchObject({ code: "ENOENT" });
+		});
+	});
+
+	describe("appendToNote", () => {
+		const versionOf = (content: string | Buffer) =>
+			createHash("sha256").update(content).digest("hex");
+
+		it("preserves the initial contents and appends the new contents exactly", async () => {
+			const notePath = join(vaultDir, "note.md");
+			const initial = "# Existing heading\n\nExisting paragraph.";
+			const appended = "\n\n## Appended heading\n\nAppended paragraph.";
+			await writeFile(notePath, initial);
+
+			await expect(
+				service.appendToNote("note.md", appended, versionOf(initial)),
+			).resolves.toEqual({ ok: true });
+			await expect(readFile(notePath, "utf8")).resolves.toBe(
+				initial + appended,
+			);
+		});
+
+		it("preserves the order of repeated UTF-8 appends", async () => {
+			const notePath = join(vaultDir, "repeated.md");
+			const initial = "Inicio";
+			const second = " → segundo";
+			const final = " → final 👋";
+			await writeFile(notePath, initial);
+
+			await service.appendToNote(
+				"repeated.md",
+				second,
+				versionOf(initial),
+			);
+			await service.appendToNote(
+				"repeated.md",
+				final,
+				versionOf(initial + second),
+			);
+
+			await expect(readFile(notePath, "utf8")).resolves.toBe(
+				initial + second + final,
+			);
+		});
+
+		it("allows an empty append without changing the note", async () => {
+			const notePath = join(vaultDir, "unchanged.md");
+			const initial = "Keep this exactly as-is.";
+			await writeFile(notePath, initial);
+
+			await expect(
+				service.appendToNote("unchanged.md", "", versionOf(initial)),
+			).resolves.toEqual({ ok: true });
+			await expect(readFile(notePath, "utf8")).resolves.toBe(initial);
+		});
+
+		it("rejects a stale expected version without changing the note", async () => {
+			const notePath = join(vaultDir, "version-conflict.md");
+			const initial = "Current contents";
+			await writeFile(notePath, initial);
+
+			await expect(
+				service.appendToNote(
+					"version-conflict.md",
+					"must not be appended",
+					versionOf("Older contents"),
+				),
+			).rejects.toThrow("VERSION_CONFLICT");
+			await expect(readFile(notePath, "utf8")).resolves.toBe(initial);
+		});
+
+		it("rejects when the note does not exist", async () => {
+			await expect(
+				service.appendToNote(
+					"missing.md",
+					"new content",
+					versionOf(""),
+				),
+			).rejects.toThrow();
+		});
+
+		it("rejects a restricted note without modifying it", async () => {
+			const notePath = join(vaultDir, "restricted.md");
+			const initial = "---\nrestricted: true\n---\n# Private\n";
+			await writeFile(notePath, initial);
+
+			await expect(
+				service.appendToNote(
+					"restricted.md",
+					"must not be appended",
+					versionOf(initial),
+				),
+			).rejects.toThrow("Note is restricted");
+			await expect(readFile(notePath, "utf8")).resolves.toBe(initial);
+		});
+
+		it("rejects traversal outside the vault without modifying the file", async () => {
+			const outsidePath = join(testDir, "outside-append.md");
+			const initial = "Outside the vault";
+			await writeFile(outsidePath, initial);
+
+			await expect(
+				service.appendToNote(
+					"../outside-append.md",
+					"must not be appended",
+					versionOf(initial),
+				),
+			).rejects.toThrow("Note path must be inside the vault");
+			await expect(readFile(outsidePath, "utf8")).resolves.toBe(initial);
+		});
+	});
+
+	describe("readNoteLines", () => {
+		it.each([
+			{
+				content: "one\ntwo\nthree\nfour\n",
+				start: 2,
+				end: 3,
+				expected: "two\nthree",
+			},
+			{
+				content: "one\ntwo\nthree\nfour\n",
+				start: 2,
+				end: 4,
+				expected: "two\nthree\nfour",
+			},
+			{ content: "one\ntwo\n", start: 1, end: 1, expected: "one" },
+			{ content: "one\ntwo", start: 2, end: 2, expected: "two" },
+			{ content: "one", start: 1, end: 1, expected: "one" },
+			{
+				content: "one\n\nthree\n",
+				start: 1,
+				end: 3,
+				expected: "one\n\nthree",
+			},
+			{ content: "one\ntwo", start: 2, end: 10, expected: "two" },
+			{ content: "one\ntwo\n", start: 3, end: 4, expected: "" },
+			{ content: "", start: 1, end: 2, expected: "" },
+			{
+				content: "one\r\ntwo\r\nthree",
+				start: 2,
+				end: 3,
+				expected: "two\nthree",
+			},
+		])(
+			"reads inclusive lines $start-$end from $content",
+			async ({ content, start, end, expected }) => {
+				const notePath = join(vaultDir, "lines.md");
+				await writeFile(notePath, content);
+
+				await expect(
+					service.readNoteLines("lines.md", start, end),
+				).resolves.toEqual({
+					notePath: await realpath(notePath),
+					startLine: start,
+					endLine: end,
+					content: expected,
+					version: createHash("sha256").update(content).digest("hex"),
+				});
+			},
+		);
+
+		it("handles CRLF and UTF-8 characters split across stream chunks", async () => {
+			// The first CR falls at byte 10,239; the emoji also spans a 10 KiB boundary.
+			const firstLine = "x".repeat(10 * 1024 - 1);
+			const secondLine = "y".repeat(10 * 1024 - 4) + "😀";
+			const content = `${firstLine}\r\n${secondLine}\r\nlast`;
+			await writeFile(join(vaultDir, "chunks.md"), content);
+
+			await expect(
+				service.readNoteLines("chunks.md", 2, 3),
+			).resolves.toMatchObject({
+				content: `${secondLine}\nlast`,
+				version: createHash("sha256").update(content).digest("hex"),
+			});
+		});
+
+		it("hashes bytes beyond the requested range and changes version when they change", async () => {
+			const notePath = join(vaultDir, "version.md");
+			const content = "selected\n" + "unselected\n".repeat(3000);
+			await writeFile(notePath, content);
+			const first = await service.readNoteLines("version.md", 1, 1);
+			expect(first.content).toBe("selected");
+			expect(first.version).toBe(
+				createHash("sha256").update(content).digest("hex"),
+			);
+
+			const updated = content + "changed suffix";
+			await writeFile(notePath, updated);
+			const second = await service.readNoteLines("version.md", 1, 1);
+			expect(second.content).toBe(first.content);
+			expect(second.version).toBe(
+				createHash("sha256").update(updated).digest("hex"),
+			);
+			expect(second.version).not.toBe(first.version);
+		});
+
+		it("hashes original file bytes even when UTF-8 decoding replaces invalid bytes", async () => {
+			const content = Buffer.from([0x6f, 0x6e, 0x65, 0x0a, 0xff]);
+			await writeFile(join(vaultDir, "bytes.md"), content);
+
+			await expect(
+				service.readNoteLines("bytes.md", 1, 2),
+			).resolves.toMatchObject({
+				content: "one\n\ufffd",
+				version: createHash("sha256").update(content).digest("hex"),
+			});
+		});
+
+		it.each([
+			[0, 1],
+			[-1, 1],
+			[1.5, 2],
+			[Number.NaN, 2],
+			[Number.POSITIVE_INFINITY, 2],
+			[Number.MAX_SAFE_INTEGER + 1, Number.MAX_SAFE_INTEGER + 1],
+			[1, 0],
+			[2, 1],
+			[1, 1.5],
+			[1, Number.NaN],
+			[1, Number.POSITIVE_INFINITY],
+			[1, Number.MAX_SAFE_INTEGER + 1],
+		])(
+			"rejects invalid range %s–%s before accessing the file",
+			async (start, end) => {
+				await expect(
+					service.readNoteLines("missing.md", start, end),
+				).rejects.toBeInstanceOf(RangeError);
+			},
+		);
+
+		it("rejects a missing note when given a valid line range", async () => {
+			await expect(
+				service.readNoteLines("missing.md", 1, 1),
+			).rejects.toMatchObject({ code: "ENOENT" });
+		});
+	});
+
 	describe("getOutline", () => {
 		it("builds a nested outline from heading levels", async () => {
 			const notePath = join(vaultDir, "nested.md");
@@ -428,6 +693,12 @@ describe("VaultService", () => {
 					{ name: "Final heading", lineNumber: 2, outline: [] },
 				],
 			});
+		});
+
+		it("rejects when the note does not exist", async () => {
+			await expect(
+				service.getOutline("missing.md"),
+			).rejects.toMatchObject({ code: "ENOENT" });
 		});
 	});
 });

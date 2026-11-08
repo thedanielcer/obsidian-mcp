@@ -153,6 +153,18 @@ describe("searchNotes process lifecycle", () => {
 		expect(childClosed).toBe(true);
 	});
 
+	it("propagates a failure from the initial filename search", async () => {
+		const error = Object.assign(new Error("ripgrep is unavailable"), {
+			code: "ENOENT",
+		});
+		filenameSearch.mockRejectedValue(error);
+
+		await expect(
+			service.searchNotes("needle", false, true, 0, 10),
+		).rejects.toBe(error);
+		expect(spawnMock).not.toHaveBeenCalled();
+	});
+
 	it.each([-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])(
 		"rejects invalid skip %s before starting a search",
 		async (skip) => {
