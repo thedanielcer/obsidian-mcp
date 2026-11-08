@@ -13,6 +13,11 @@ import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RestrictionsService } from "../../src/auth/restrictions.service.ts";
 import { VaultService } from "../../src/vault/vault.service.ts";
+import {
+	authorizedIdentity,
+	createRestrictedReaderEmails,
+	unauthorizedIdentity,
+} from "../fixtures/identities.ts";
 
 const digest = (content: string | Buffer) =>
 	createHash("sha256").update(content).digest("hex");
@@ -32,7 +37,11 @@ describe("VaultService note mutations", () => {
 		service = new VaultService(
 			logger,
 			vaultDir,
-			new RestrictionsService(logger, restrictedPaths),
+			new RestrictionsService(
+				logger,
+				restrictedPaths,
+				createRestrictedReaderEmails(),
+			),
 		);
 	});
 
@@ -103,6 +112,7 @@ describe("VaultService note mutations", () => {
 					"replace.md",
 					replacement,
 					digest(original),
+					unauthorizedIdentity,
 				),
 			).resolves.toEqual({ ok: true });
 			await expect(readFile(notePath, "utf8")).resolves.toBe(replacement);
@@ -114,7 +124,12 @@ describe("VaultService note mutations", () => {
 			await writeFile(notePath, original);
 
 			await expect(
-				service.replaceNote("empty.md", "", digest(original)),
+				service.replaceNote(
+					"empty.md",
+					"",
+					digest(original),
+					unauthorizedIdentity,
+				),
 			).resolves.toEqual({ ok: true });
 			await expect(readFile(notePath, "utf8")).resolves.toBe("");
 		});
@@ -129,6 +144,7 @@ describe("VaultService note mutations", () => {
 					"stale.md",
 					"replacement",
 					digest("old contents"),
+					unauthorizedIdentity,
 				),
 			).rejects.toThrow("VERSION_CONFLICT");
 			await expect(readFile(notePath, "utf8")).resolves.toBe(current);
@@ -136,7 +152,12 @@ describe("VaultService note mutations", () => {
 
 		it("rejects when the note does not exist", async () => {
 			await expect(
-				service.replaceNote("missing.md", "replacement", digest("")),
+				service.replaceNote(
+					"missing.md",
+					"replacement",
+					digest(""),
+					unauthorizedIdentity,
+				),
 			).rejects.toMatchObject({ code: "ENOENT" });
 		});
 
@@ -150,9 +171,22 @@ describe("VaultService note mutations", () => {
 					"restricted.md",
 					"replacement",
 					digest(original),
+					unauthorizedIdentity,
 				),
 			).rejects.toThrow("Note is restricted");
 			await expect(readFile(notePath, "utf8")).resolves.toBe(original);
+
+			await expect(
+				service.replaceNote(
+					"restricted.md",
+					"authorized replacement",
+					digest(original),
+					authorizedIdentity,
+				),
+			).resolves.toEqual({ ok: true });
+			await expect(readFile(notePath, "utf8")).resolves.toBe(
+				"authorized replacement",
+			);
 		});
 
 		it("rejects traversal outside the vault without modifying the file", async () => {
@@ -165,6 +199,7 @@ describe("VaultService note mutations", () => {
 					"../outside-replace.md",
 					"replacement",
 					digest(original),
+					unauthorizedIdentity,
 				),
 			).rejects.toThrow("Note path must be inside the vault");
 			await expect(readFile(outsidePath, "utf8")).resolves.toBe(original);
@@ -179,7 +214,12 @@ describe("VaultService note mutations", () => {
 			await writeFile(notePath, original);
 
 			await expect(
-				service.beautifyNote("beautify.md", prefix, digest(original)),
+				service.beautifyNote(
+					"beautify.md",
+					prefix,
+					digest(original),
+					unauthorizedIdentity,
+				),
 			).resolves.toEqual({ ok: true });
 			await expect(readFile(notePath, "utf8")).resolves.toBe(
 				prefix + original,
@@ -192,7 +232,12 @@ describe("VaultService note mutations", () => {
 			await writeFile(notePath, original);
 
 			await expect(
-				service.beautifyNote("unchanged.md", "", digest(original)),
+				service.beautifyNote(
+					"unchanged.md",
+					"",
+					digest(original),
+					unauthorizedIdentity,
+				),
 			).resolves.toEqual({ ok: true });
 			await expect(readFile(notePath, "utf8")).resolves.toBe(original);
 		});
@@ -207,6 +252,7 @@ describe("VaultService note mutations", () => {
 					"stale-beautify.md",
 					"prefix",
 					digest("old"),
+					unauthorizedIdentity,
 				),
 			).rejects.toThrow("VERSION_CONFLICT");
 			await expect(readFile(notePath, "utf8")).resolves.toBe(original);
@@ -214,7 +260,12 @@ describe("VaultService note mutations", () => {
 
 		it("rejects when the note does not exist", async () => {
 			await expect(
-				service.beautifyNote("missing.md", "prefix", digest("")),
+				service.beautifyNote(
+					"missing.md",
+					"prefix",
+					digest(""),
+					unauthorizedIdentity,
+				),
 			).rejects.toMatchObject({ code: "ENOENT" });
 		});
 
@@ -228,9 +279,22 @@ describe("VaultService note mutations", () => {
 					"restricted-beautify.md",
 					"prefix",
 					digest(original),
+					unauthorizedIdentity,
 				),
 			).rejects.toThrow("Note is restricted");
 			await expect(readFile(notePath, "utf8")).resolves.toBe(original);
+
+			await expect(
+				service.beautifyNote(
+					"restricted-beautify.md",
+					"authorized prefix\n",
+					digest(original),
+					authorizedIdentity,
+				),
+			).resolves.toEqual({ ok: true });
+			await expect(readFile(notePath, "utf8")).resolves.toBe(
+				`authorized prefix\n${original}`,
+			);
 		});
 
 		it("rejects traversal outside the vault without modifying the file", async () => {
@@ -243,6 +307,7 @@ describe("VaultService note mutations", () => {
 					"../outside-beautify.md",
 					"prefix",
 					digest(original),
+					unauthorizedIdentity,
 				),
 			).rejects.toThrow("Note path must be inside the vault");
 			await expect(readFile(outsidePath, "utf8")).resolves.toBe(original);

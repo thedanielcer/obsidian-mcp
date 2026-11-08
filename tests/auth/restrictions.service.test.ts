@@ -5,6 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RestrictionsService } from "../../src/auth/restrictions.service.ts";
 import pino from "pino";
 import pretty from "pino-pretty";
+import {
+	authorizedIdentity,
+	createRestrictedReaderEmails,
+	unauthorizedIdentity,
+} from "../fixtures/identities.ts";
 
 describe("RestrictionsService", () => {
 	let testDir: string;
@@ -28,7 +33,11 @@ describe("RestrictionsService", () => {
 							sync: true,
 						}),
 					);
-		service = new RestrictionsService(logger, restrictedNotesPath);
+		service = new RestrictionsService(
+			logger,
+			restrictedNotesPath,
+			createRestrictedReaderEmails(),
+		);
 	});
 
 	afterEach(async () => {
@@ -204,9 +213,12 @@ describe("RestrictionsService", () => {
 				restrictedByStringProperty,
 			];
 
-			await expect(service.filterRestrictedNotes(notes)).resolves.toEqual(
-				[publicWithoutProperties, publicWithProperties],
-			);
+			await expect(
+				service.filterRestrictedNotes([...notes], unauthorizedIdentity),
+			).resolves.toEqual([publicWithoutProperties, publicWithProperties]);
+			await expect(
+				service.filterRestrictedNotes([...notes], authorizedIdentity),
+			).resolves.toEqual(notes);
 		});
 
 		it("filters a note restricted by both sources without affecting other notes", async () => {
@@ -221,8 +233,17 @@ describe("RestrictionsService", () => {
 			await setRestrictedPaths([restrictedByBoth]);
 
 			await expect(
-				service.filterRestrictedNotes([restrictedByBoth, publicNote]),
+				service.filterRestrictedNotes(
+					[restrictedByBoth, publicNote],
+					unauthorizedIdentity,
+				),
 			).resolves.toEqual([publicNote]);
+			await expect(
+				service.filterRestrictedNotes(
+					[restrictedByBoth, publicNote],
+					authorizedIdentity,
+				),
+			).resolves.toEqual([restrictedByBoth, publicNote]);
 		});
 
 		it("returns every note in its original order when none are restricted", async () => {
@@ -233,14 +254,17 @@ describe("RestrictionsService", () => {
 			);
 
 			await expect(
-				service.filterRestrictedNotes([firstNote, secondNote]),
+				service.filterRestrictedNotes(
+					[firstNote, secondNote],
+					unauthorizedIdentity,
+				),
 			).resolves.toEqual([firstNote, secondNote]);
 		});
 
 		it("returns an empty list when given no notes", async () => {
-			await expect(service.filterRestrictedNotes([])).resolves.toEqual(
-				[],
-			);
+			await expect(
+				service.filterRestrictedNotes([], unauthorizedIdentity),
+			).resolves.toEqual([]);
 		});
 
 		it("rejects a restricted-paths file that is not an array of strings", async () => {
@@ -249,7 +273,9 @@ describe("RestrictionsService", () => {
 				JSON.stringify(["valid.md", 42, true]),
 			);
 
-			await expect(service.filterRestrictedNotes([])).rejects.toThrow();
+			await expect(
+				service.filterRestrictedNotes([], unauthorizedIdentity),
+			).rejects.toThrow();
 		});
 	});
 });

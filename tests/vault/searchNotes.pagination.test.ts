@@ -5,6 +5,11 @@ import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RestrictionsService } from "../../src/auth/restrictions.service.ts";
 import { VaultService } from "../../src/vault/vault.service.ts";
+import {
+	authorizedIdentity,
+	createRestrictedReaderEmails,
+	unauthorizedIdentity,
+} from "../fixtures/identities.ts";
 
 describe("searchNotes pagination with ripgrep", () => {
 	let vaultDir: string;
@@ -19,7 +24,11 @@ describe("searchNotes pagination with ripgrep", () => {
 		service = new VaultService(
 			logger,
 			vaultDir,
-			new RestrictionsService(logger, restrictedPaths),
+			new RestrictionsService(
+				logger,
+				restrictedPaths,
+				createRestrictedReaderEmails(),
+			),
 		);
 	});
 
@@ -34,13 +43,21 @@ describe("searchNotes pagination with ripgrep", () => {
 		);
 		await writeFile(join(vaultDir, "a.md"), "needle a1\nneedle a2\n");
 
-		const first = await service.searchNotes("needle", false, true, 0, 2);
+		const first = await service.searchNotes(
+			"needle",
+			false,
+			true,
+			0,
+			2,
+			unauthorizedIdentity,
+		);
 		const second = await service.searchNotes(
 			"needle",
 			false,
 			true,
 			first.pagination.nextSkip,
 			2,
+			unauthorizedIdentity,
 		);
 		const third = await service.searchNotes(
 			"needle",
@@ -48,6 +65,7 @@ describe("searchNotes pagination with ripgrep", () => {
 			true,
 			second.pagination.nextSkip,
 			2,
+			unauthorizedIdentity,
 		);
 
 		expect(first.pagination).toEqual({
@@ -82,7 +100,14 @@ describe("searchNotes pagination with ripgrep", () => {
 	it("reports no more results when the final page is exactly full", async () => {
 		await writeFile(join(vaultDir, "a.md"), "needle\nneedle\n");
 
-		const result = await service.searchNotes("needle", false, true, 0, 2);
+		const result = await service.searchNotes(
+			"needle",
+			false,
+			true,
+			0,
+			2,
+			unauthorizedIdentity,
+		);
 		expect(result.matches).toHaveLength(2);
 		expect(result.pagination).toEqual({
 			skip: 0,
@@ -96,7 +121,14 @@ describe("searchNotes pagination with ripgrep", () => {
 		await writeFile(join(vaultDir, "a.md"), "other content\n");
 
 		await expect(
-			service.searchNotes("needle", false, true, 3, 2),
+			service.searchNotes(
+				"needle",
+				false,
+				true,
+				3,
+				2,
+				unauthorizedIdentity,
+			),
 		).resolves.toEqual({
 			matches: [],
 			pagination: { skip: 3, limit: 2, hasMore: false, nextSkip: 3 },
@@ -107,7 +139,14 @@ describe("searchNotes pagination with ripgrep", () => {
 		await writeFile(join(vaultDir, "a.md"), "needle\n");
 
 		await expect(
-			service.searchNotes("needle", false, true, 3, 2),
+			service.searchNotes(
+				"needle",
+				false,
+				true,
+				3,
+				2,
+				unauthorizedIdentity,
+			),
 		).resolves.toEqual({
 			matches: [],
 			pagination: { skip: 3, limit: 2, hasMore: false, nextSkip: 3 },
@@ -121,10 +160,37 @@ describe("searchNotes pagination with ripgrep", () => {
 		);
 
 		await expect(
-			service.searchNotes("needle", false, true, 0, 2),
+			service.searchNotes(
+				"needle",
+				false,
+				true,
+				0,
+				2,
+				unauthorizedIdentity,
+			),
 		).resolves.toEqual({
 			matches: [],
 			pagination: { skip: 0, limit: 2, hasMore: false, nextSkip: 0 },
+		});
+
+		await expect(
+			service.searchNotes(
+				"needle",
+				false,
+				true,
+				0,
+				2,
+				authorizedIdentity,
+			),
+		).resolves.toEqual({
+			matches: [
+				{
+					path: join(vaultDir, "a.md"),
+					line: 4,
+					text: "needle\n",
+				},
+			],
+			pagination: { skip: 0, limit: 2, hasMore: false, nextSkip: 1 },
 		});
 	});
 
@@ -149,13 +215,21 @@ describe("searchNotes pagination with ripgrep", () => {
 		await writeFile(secondPublic, "needle public 3\n");
 		await writeFile(restrictedPaths, JSON.stringify([restrictedByJson]));
 
-		const first = await service.searchNotes("needle", false, true, 0, 2);
+		const first = await service.searchNotes(
+			"needle",
+			false,
+			true,
+			0,
+			2,
+			unauthorizedIdentity,
+		);
 		const second = await service.searchNotes(
 			"needle",
 			false,
 			true,
 			first.pagination.nextSkip,
 			2,
+			unauthorizedIdentity,
 		);
 
 		expect(first).toEqual({
@@ -170,6 +244,31 @@ describe("searchNotes pagination with ripgrep", () => {
 				{ path: secondPublic, line: 1, text: "needle public 3\n" },
 			],
 			pagination: { skip: 2, limit: 2, hasMore: false, nextSkip: 3 },
+		});
+
+		await expect(
+			service.searchNotes(
+				"needle",
+				false,
+				true,
+				0,
+				2,
+				authorizedIdentity,
+			),
+		).resolves.toEqual({
+			matches: [
+				{
+					path: restrictedByFrontmatter,
+					line: 4,
+					text: "needle private 1\n",
+				},
+				{
+					path: restrictedByFrontmatter,
+					line: 5,
+					text: "needle private 2\n",
+				},
+			],
+			pagination: { skip: 0, limit: 2, hasMore: true, nextSkip: 2 },
 		});
 	});
 
@@ -188,6 +287,7 @@ describe("searchNotes pagination with ripgrep", () => {
 				caseSensitive,
 				0,
 				10,
+				unauthorizedIdentity,
 			);
 			expect(result.matches.map((match) => match.line)).toEqual(lines);
 			expect(result.pagination).toEqual({

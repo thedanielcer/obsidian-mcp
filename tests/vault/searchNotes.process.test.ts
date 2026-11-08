@@ -4,6 +4,10 @@ import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RestrictionsService } from "../../src/auth/restrictions.service.ts";
 import { VaultService } from "../../src/vault/vault.service.ts";
+import {
+	createRestrictedReaderEmails,
+	unauthorizedIdentity,
+} from "../fixtures/identities.ts";
 
 const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
 
@@ -28,7 +32,11 @@ describe("searchNotes process lifecycle", () => {
 		child = undefined;
 		childClosed = false;
 		const logger = pino({ level: "silent" });
-		const restrictions = new RestrictionsService(logger, "");
+		const restrictions = new RestrictionsService(
+			logger,
+			"",
+			createRestrictedReaderEmails(),
+		);
 		vi.spyOn(restrictions, "filterRestrictedNotes").mockImplementation(
 			async (paths) => paths,
 		);
@@ -75,7 +83,14 @@ describe("searchNotes process lifecycle", () => {
 		runScript(`${writeMatch} ${writeMatch} setInterval(() => {}, 1000);`);
 
 		await expect(
-			service.searchNotes("needle", false, true, 0, 1),
+			service.searchNotes(
+				"needle",
+				false,
+				true,
+				0,
+				1,
+				unauthorizedIdentity,
+			),
 		).resolves.toEqual({
 			matches: [{ path: "note.md", line: 1, text: "needle\n" }],
 			pagination: { skip: 0, limit: 1, hasMore: true, nextSkip: 1 },
@@ -90,7 +105,14 @@ describe("searchNotes process lifecycle", () => {
 		);
 
 		await expect(
-			service.searchNotes("needle", false, true, 0, 10),
+			service.searchNotes(
+				"needle",
+				false,
+				true,
+				0,
+				10,
+				unauthorizedIdentity,
+			),
 		).rejects.toBeInstanceOf(SyntaxError);
 		expect(childClosed).toBe(true);
 		expect(child!.killed).toBe(true);
@@ -102,7 +124,14 @@ describe("searchNotes process lifecycle", () => {
 		);
 
 		await expect(
-			service.searchNotes("needle", false, true, 0, 10),
+			service.searchNotes(
+				"needle",
+				false,
+				true,
+				0,
+				10,
+				unauthorizedIdentity,
+			),
 		).resolves.toMatchObject({
 			matches: [{ path: "note.md", line: 1, text: "needle\n" }],
 			pagination: { hasMore: false, nextSkip: 1 },
@@ -117,7 +146,14 @@ describe("searchNotes process lifecycle", () => {
 		);
 
 		await expect(
-			service.searchNotes("needle", false, true, 0, 10),
+			service.searchNotes(
+				"needle",
+				false,
+				true,
+				0,
+				10,
+				unauthorizedIdentity,
+			),
 		).rejects.toThrow(/exit code 2.*permission denied/);
 		expect(childClosed).toBe(true);
 	});
@@ -126,7 +162,14 @@ describe("searchNotes process lifecycle", () => {
 		runScript("process.exit(1);");
 
 		await expect(
-			service.searchNotes("needle", false, true, 0, 10),
+			service.searchNotes(
+				"needle",
+				false,
+				true,
+				0,
+				10,
+				unauthorizedIdentity,
+			),
 		).resolves.toEqual({
 			matches: [],
 			pagination: { skip: 0, limit: 10, hasMore: false, nextSkip: 0 },
@@ -148,7 +191,14 @@ describe("searchNotes process lifecycle", () => {
 		});
 
 		await expect(
-			service.searchNotes("needle", false, true, 0, 10),
+			service.searchNotes(
+				"needle",
+				false,
+				true,
+				0,
+				10,
+				unauthorizedIdentity,
+			),
 		).rejects.toMatchObject({ code: "ENOENT" });
 		expect(childClosed).toBe(true);
 	});
@@ -160,7 +210,14 @@ describe("searchNotes process lifecycle", () => {
 		filenameSearch.mockRejectedValue(error);
 
 		await expect(
-			service.searchNotes("needle", false, true, 0, 10),
+			service.searchNotes(
+				"needle",
+				false,
+				true,
+				0,
+				10,
+				unauthorizedIdentity,
+			),
 		).rejects.toBe(error);
 		expect(spawnMock).not.toHaveBeenCalled();
 	});
@@ -169,7 +226,14 @@ describe("searchNotes process lifecycle", () => {
 		"rejects invalid skip %s before starting a search",
 		async (skip) => {
 			await expect(
-				service.searchNotes("needle", false, true, skip, 10),
+				service.searchNotes(
+					"needle",
+					false,
+					true,
+					skip,
+					10,
+					unauthorizedIdentity,
+				),
 			).rejects.toBeInstanceOf(RangeError);
 			expect(filenameSearch).not.toHaveBeenCalled();
 			expect(spawnMock).not.toHaveBeenCalled();
@@ -180,7 +244,14 @@ describe("searchNotes process lifecycle", () => {
 		"rejects invalid limit %s before starting a search",
 		async (limit) => {
 			await expect(
-				service.searchNotes("needle", false, true, 0, limit),
+				service.searchNotes(
+					"needle",
+					false,
+					true,
+					0,
+					limit,
+					unauthorizedIdentity,
+				),
 			).rejects.toBeInstanceOf(RangeError);
 			expect(filenameSearch).not.toHaveBeenCalled();
 			expect(spawnMock).not.toHaveBeenCalled();
@@ -195,6 +266,7 @@ describe("searchNotes process lifecycle", () => {
 				true,
 				Number.MAX_SAFE_INTEGER,
 				1,
+				unauthorizedIdentity,
 			),
 		).rejects.toBeInstanceOf(RangeError);
 		expect(filenameSearch).not.toHaveBeenCalled();

@@ -7,6 +7,11 @@ import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RestrictionsService } from "../../src/auth/restrictions.service.ts";
 import { VaultService } from "../../src/vault/vault.service.ts";
+import {
+	authorizedIdentity,
+	createRestrictedReaderEmails,
+	unauthorizedIdentity,
+} from "../fixtures/identities.ts";
 
 const { readStreamMock } = vi.hoisted(() => ({ readStreamMock: vi.fn() }));
 vi.mock("node:fs", async (importOriginal) => ({
@@ -35,7 +40,11 @@ describe("replaceNoteLines", () => {
 		const restrictedPaths = join(testDir, "restrictions.json");
 		await promises.writeFile(restrictedPaths, "[]");
 		const logger = pino({ level: "silent" });
-		restrictions = new RestrictionsService(logger, restrictedPaths);
+		restrictions = new RestrictionsService(
+			logger,
+			restrictedPaths,
+			createRestrictedReaderEmails(),
+		);
 		service = new VaultService(logger, vaultDir, restrictions);
 	});
 
@@ -78,8 +87,14 @@ describe("replaceNoteLines", () => {
 		"replaces inclusive lines in %j (%s-%s)",
 		async (original, start, end, content, expected) => {
 			await promises.writeFile(notePath, original);
-			const version = (await service.readNoteLines("note.md", start, end))
-				.version;
+			const version = (
+				await service.readNoteLines(
+					"note.md",
+					start,
+					end,
+					unauthorizedIdentity,
+				)
+			).version;
 			await expect(
 				service.replaceNoteLines(
 					"note.md",
@@ -87,6 +102,7 @@ describe("replaceNoteLines", () => {
 					end,
 					content,
 					version,
+					unauthorizedIdentity,
 				),
 			).resolves.toEqual({ ok: true });
 			expect(await promises.readFile(notePath, "utf8")).toBe(expected);
@@ -105,6 +121,7 @@ describe("replaceNoteLines", () => {
 			2,
 			"new",
 			digest(original),
+			unauthorizedIdentity,
 		);
 		expect(await promises.readFile(notePath)).toEqual(
 			Buffer.concat([prefix, Buffer.from("new\r\n"), suffix]),
@@ -123,6 +140,7 @@ describe("replaceNoteLines", () => {
 			2,
 			"\u{1f44b}\nnew",
 			digest(original),
+			unauthorizedIdentity,
 		);
 		expect(await promises.readFile(notePath, "utf8")).toBe(
 			prefix + "\u{1f44b}\r\nnew\r\n" + suffix,
@@ -144,6 +162,7 @@ describe("replaceNoteLines", () => {
 			3,
 			"new",
 			digest(original),
+			unauthorizedIdentity,
 		);
 		expect(await promises.readFile(notePath, "utf8")).toBe("a\r\nnew\r\nd");
 	});
@@ -153,7 +172,14 @@ describe("replaceNoteLines", () => {
 		const changed = original + "changed suffix";
 		await promises.writeFile(notePath, changed);
 		await expect(
-			service.replaceNoteLines("note.md", 1, 1, "new", digest(original)),
+			service.replaceNoteLines(
+				"note.md",
+				1,
+				1,
+				"new",
+				digest(original),
+				unauthorizedIdentity,
+			),
 		).rejects.toThrow("VERSION_CONFLICT");
 		expect(await promises.readFile(notePath, "utf8")).toBe(changed);
 		expect(await promises.readdir(vaultDir)).toEqual(["note.md"]);
@@ -170,6 +196,7 @@ describe("replaceNoteLines", () => {
 					3,
 					"new",
 					digest(original),
+					unauthorizedIdentity,
 				),
 			).rejects.toBeInstanceOf(RangeError);
 			expect(await promises.readFile(notePath, "utf8")).toBe(original);
@@ -195,6 +222,7 @@ describe("replaceNoteLines", () => {
 					end,
 					"new",
 					digest(""),
+					unauthorizedIdentity,
 				),
 			).rejects.toBeInstanceOf(RangeError);
 		},
@@ -202,13 +230,27 @@ describe("replaceNoteLines", () => {
 
 	it("rejects malformed versions before accessing the note", async () => {
 		await expect(
-			service.replaceNoteLines("missing.md", 1, 1, "new", "invalid"),
+			service.replaceNoteLines(
+				"missing.md",
+				1,
+				1,
+				"new",
+				"invalid",
+				unauthorizedIdentity,
+			),
 		).rejects.toBeInstanceOf(TypeError);
 	});
 
 	it("rejects a missing note when given a valid range and version", async () => {
 		await expect(
-			service.replaceNoteLines("missing.md", 1, 1, "new", digest("")),
+			service.replaceNoteLines(
+				"missing.md",
+				1,
+				1,
+				"new",
+				digest(""),
+				unauthorizedIdentity,
+			),
 		).rejects.toMatchObject({ code: "ENOENT" });
 		expect(await promises.readdir(vaultDir)).toEqual([]);
 	});
@@ -222,14 +264,36 @@ describe("replaceNoteLines", () => {
 				1,
 				"new",
 				digest("secret"),
+				unauthorizedIdentity,
 			),
 		).rejects.toThrow("Note path must be inside the vault");
 		const original = "---\nrestricted: true\n---\nsecret\n";
 		await promises.writeFile(notePath, original);
 		await expect(
-			service.replaceNoteLines("note.md", 4, 4, "new", digest(original)),
+			service.replaceNoteLines(
+				"note.md",
+				4,
+				4,
+				"new",
+				digest(original),
+				unauthorizedIdentity,
+			),
 		).rejects.toThrow("Note is restricted");
 		expect(await promises.readFile(notePath, "utf8")).toBe(original);
+
+		await expect(
+			service.replaceNoteLines(
+				"note.md",
+				4,
+				4,
+				"authorized",
+				digest(original),
+				authorizedIdentity,
+			),
+		).resolves.toEqual({ ok: true });
+		expect(await promises.readFile(notePath, "utf8")).toBe(
+			"---\nrestricted: true\n---\nauthorized\n",
+		);
 		expect(await promises.readdir(vaultDir)).toEqual(["note.md"]);
 	});
 
@@ -248,7 +312,14 @@ describe("replaceNoteLines", () => {
 			),
 		);
 		await expect(
-			service.replaceNoteLines("note.md", 2, 2, "new", digest(original)),
+			service.replaceNoteLines(
+				"note.md",
+				2,
+				2,
+				"new",
+				digest(original),
+				unauthorizedIdentity,
+			),
 		).rejects.toThrow("read failed");
 		expect(await promises.readFile(notePath, "utf8")).toBe(original);
 		expect(await promises.readdir(vaultDir)).toEqual(["note.md"]);
@@ -270,7 +341,14 @@ describe("replaceNoteLines", () => {
 			return handle;
 		});
 		await expect(
-			service.replaceNoteLines("note.md", 2, 2, "new", digest(original)),
+			service.replaceNoteLines(
+				"note.md",
+				2,
+				2,
+				"new",
+				digest(original),
+				unauthorizedIdentity,
+			),
 		).rejects.toThrow("write failed");
 		expect(await promises.readFile(notePath, "utf8")).toBe(original);
 		expect(await promises.readdir(vaultDir)).toEqual(["note.md"]);
@@ -283,7 +361,14 @@ describe("replaceNoteLines", () => {
 			new Error("rename failed"),
 		);
 		await expect(
-			service.replaceNoteLines("note.md", 2, 2, "new", digest(original)),
+			service.replaceNoteLines(
+				"note.md",
+				2,
+				2,
+				"new",
+				digest(original),
+				unauthorizedIdentity,
+			),
 		).rejects.toThrow("rename failed");
 		expect(await promises.readFile(notePath, "utf8")).toBe(original);
 		expect(await promises.readdir(vaultDir)).toEqual(["note.md"]);
@@ -299,7 +384,14 @@ describe("replaceNoteLines", () => {
 			await promises.writeFile(notePath, changed);
 		});
 		await expect(
-			service.replaceNoteLines("note.md", 2, 2, "new", digest(original)),
+			service.replaceNoteLines(
+				"note.md",
+				2,
+				2,
+				"new",
+				digest(original),
+				unauthorizedIdentity,
+			),
 		).rejects.toThrow("VERSION_CONFLICT");
 		expect(await promises.readFile(notePath, "utf8")).toBe(changed);
 		expect(await promises.readdir(vaultDir)).toEqual(["note.md"]);

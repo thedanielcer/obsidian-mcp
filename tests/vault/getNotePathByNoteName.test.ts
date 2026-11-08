@@ -5,6 +5,11 @@ import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RestrictionsService } from "../../src/auth/restrictions.service.ts";
 import { VaultService } from "../../src/vault/vault.service.ts";
+import {
+	authorizedIdentity,
+	createRestrictedReaderEmails,
+	unauthorizedIdentity,
+} from "../fixtures/identities.ts";
 
 describe("getNotePathByNoteName", () => {
 	let testDir: string;
@@ -22,7 +27,11 @@ describe("getNotePathByNoteName", () => {
 		service = new VaultService(
 			logger,
 			vaultDir,
-			new RestrictionsService(logger, restrictedPaths),
+			new RestrictionsService(
+				logger,
+				restrictedPaths,
+				createRestrictedReaderEmails(),
+			),
 		);
 	});
 
@@ -41,7 +50,12 @@ describe("getNotePathByNoteName", () => {
 		]);
 
 		await expect(
-			service.getNotePathByNoteName("project", 0, 10),
+			service.getNotePathByNoteName(
+				"project",
+				0,
+				10,
+				unauthorizedIdentity,
+			),
 		).resolves.toEqual({
 			paths: [join("nested", "project-plan.md"), "project.md"],
 			pagination: { skip: 0, limit: 10, hasMore: false, nextSkip: 2 },
@@ -63,11 +77,17 @@ describe("getNotePathByNoteName", () => {
 		]);
 		await writeFile(restrictedPaths, JSON.stringify([restrictedByJson]));
 
-		const first = await service.getNotePathByNoteName("match", 0, 2);
+		const first = await service.getNotePathByNoteName(
+			"match",
+			0,
+			2,
+			unauthorizedIdentity,
+		);
 		const second = await service.getNotePathByNoteName(
 			"match",
 			first.pagination.nextSkip,
 			2,
+			unauthorizedIdentity,
 		);
 
 		expect(first).toEqual({
@@ -78,13 +98,31 @@ describe("getNotePathByNoteName", () => {
 			paths: ["match-05.md"],
 			pagination: { skip: 2, limit: 2, hasMore: false, nextSkip: 3 },
 		});
+
+		await expect(
+			service.getNotePathByNoteName("match", 0, 10, authorizedIdentity),
+		).resolves.toEqual({
+			paths: [
+				"match-01.md",
+				"match-02.md",
+				"match-03.md",
+				"match-04.md",
+				"match-05.md",
+			],
+			pagination: { skip: 0, limit: 10, hasMore: false, nextSkip: 5 },
+		});
 	});
 
 	it("returns empty pagination metadata when no filenames match", async () => {
 		await writeFile(join(vaultDir, "other.md"), "content");
 
 		await expect(
-			service.getNotePathByNoteName("missing", 3, 2),
+			service.getNotePathByNoteName(
+				"missing",
+				3,
+				2,
+				unauthorizedIdentity,
+			),
 		).resolves.toEqual({
 			paths: [],
 			pagination: { skip: 3, limit: 2, hasMore: false, nextSkip: 3 },
@@ -95,7 +133,7 @@ describe("getNotePathByNoteName", () => {
 		await writeFile(join(vaultDir, "match.md"), "content");
 
 		await expect(
-			service.getNotePathByNoteName("match", 5, 2),
+			service.getNotePathByNoteName("match", 5, 2, unauthorizedIdentity),
 		).resolves.toEqual({
 			paths: [],
 			pagination: { skip: 5, limit: 2, hasMore: false, nextSkip: 5 },
@@ -106,7 +144,12 @@ describe("getNotePathByNoteName", () => {
 		await writeFile(join(vaultDir, "my-draft.md"), "content");
 
 		await expect(
-			service.getNotePathByNoteName("-draft", 0, 10),
+			service.getNotePathByNoteName(
+				"-draft",
+				0,
+				10,
+				unauthorizedIdentity,
+			),
 		).resolves.toMatchObject({ paths: ["my-draft.md"] });
 	});
 
@@ -121,7 +164,12 @@ describe("getNotePathByNoteName", () => {
 		Object.assign(service, { execFileAsync: filenameSearch });
 
 		await expect(
-			service.getNotePathByNoteName("match", skip, 10),
+			service.getNotePathByNoteName(
+				"match",
+				skip,
+				10,
+				unauthorizedIdentity,
+			),
 		).rejects.toBeInstanceOf(RangeError);
 		expect(filenameSearch).not.toHaveBeenCalled();
 	});
@@ -138,14 +186,24 @@ describe("getNotePathByNoteName", () => {
 		Object.assign(service, { execFileAsync: filenameSearch });
 
 		await expect(
-			service.getNotePathByNoteName("match", 0, limit),
+			service.getNotePathByNoteName(
+				"match",
+				0,
+				limit,
+				unauthorizedIdentity,
+			),
 		).rejects.toBeInstanceOf(RangeError);
 		expect(filenameSearch).not.toHaveBeenCalled();
 	});
 
 	it("rejects a pagination window beyond safe integer precision", async () => {
 		await expect(
-			service.getNotePathByNoteName("match", Number.MAX_SAFE_INTEGER, 1),
+			service.getNotePathByNoteName(
+				"match",
+				Number.MAX_SAFE_INTEGER,
+				1,
+				unauthorizedIdentity,
+			),
 		).rejects.toBeInstanceOf(RangeError);
 	});
 
@@ -158,7 +216,7 @@ describe("getNotePathByNoteName", () => {
 		});
 
 		await expect(
-			service.getNotePathByNoteName("match", 0, 10),
+			service.getNotePathByNoteName("match", 0, 10, unauthorizedIdentity),
 		).rejects.toBe(error);
 	});
 
@@ -168,7 +226,7 @@ describe("getNotePathByNoteName", () => {
 		});
 
 		await expect(
-			service.getNotePathByNoteName("match", 0, 10),
+			service.getNotePathByNoteName("match", 0, 10, unauthorizedIdentity),
 		).resolves.toEqual({
 			paths: [],
 			pagination: { skip: 0, limit: 10, hasMore: false, nextSkip: 0 },

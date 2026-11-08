@@ -23,6 +23,11 @@ const appConfigSchema = z.object({
 		.pipe(z.array(z.hostname()).min(1)),
 	vaultDir: z.string().trim().default("./vault"),
 	restrictedNotesJson: z.string().trim(),
+	canReadRestrictedNotes: z
+		.string()
+		.transform((value) =>
+			value.split(",").map((allowed) => allowed.trim().toLowerCase()),
+		),
 });
 
 export type AppConfig = z.infer<typeof appConfigSchema>;
@@ -54,5 +59,6 @@ export function loadConfig(env?: NodeJS.ProcessEnv): AppConfig {
 		allowedHosts: env.ALLOWED_HOSTS,
 		vaultDir: env.VAULT_DIR,
 		restrictedNotesPaths: env.RESTRICTED_NOTES_JSON,
+		canReadRestrictedNotes: env.CAN_READ_RESTRICTED_NOTES,
 	});
 }

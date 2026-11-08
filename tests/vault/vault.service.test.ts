@@ -14,6 +14,11 @@ import pretty from "pino-pretty";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VaultService } from "../../src/vault/vault.service.ts";
 import { RestrictionsService } from "../../src/auth/restrictions.service.ts";
+import {
+	authorizedIdentity,
+	createRestrictedReaderEmails,
+	unauthorizedIdentity,
+} from "../fixtures/identities.ts";
 
 describe("VaultService", () => {
 	let testDir: string;
@@ -40,7 +45,11 @@ describe("VaultService", () => {
 					);
 		const restrictedPaths = join(testDir, "restrictions.json");
 		await writeFile(restrictedPaths, "[]");
-		restrictionsService = new RestrictionsService(logger, restrictedPaths);
+		restrictionsService = new RestrictionsService(
+			logger,
+			restrictedPaths,
+			createRestrictedReaderEmails(),
+		);
 		service = new VaultService(logger, vaultDir, restrictionsService);
 	});
 
@@ -58,7 +67,9 @@ describe("VaultService", () => {
 				writeFile(join(vaultDir, "ignored.txt"), "not a note"),
 			]);
 
-			await expect(service.getNotes()).resolves.toEqual({
+			await expect(
+				service.getNotes(0, 50, unauthorizedIdentity),
+			).resolves.toEqual({
 				notes: ["a.md", "b.md", join("folder", "c.md")],
 				pagination: {
 					skip: 0,
@@ -70,7 +81,9 @@ describe("VaultService", () => {
 		});
 
 		it("returns an empty list for an empty vault", async () => {
-			await expect(service.getNotes()).resolves.toEqual({
+			await expect(
+				service.getNotes(0, 50, unauthorizedIdentity),
+			).resolves.toEqual({
 				notes: [],
 				pagination: {
 					skip: 0,
@@ -88,7 +101,7 @@ describe("VaultService", () => {
 				),
 			);
 
-			const first = await service.getNotes(0, 2);
+			const first = await service.getNotes(0, 2, unauthorizedIdentity);
 			expect(first).toEqual({
 				notes: ["01.md", "02.md"],
 				pagination: {
@@ -98,7 +111,11 @@ describe("VaultService", () => {
 					nextSkip: 2,
 				},
 			});
-			const second = await service.getNotes(first.pagination.nextSkip, 2);
+			const second = await service.getNotes(
+				first.pagination.nextSkip,
+				2,
+				unauthorizedIdentity,
+			);
 			expect(second).toEqual({
 				notes: ["03.md", "04.md"],
 				pagination: {
@@ -109,7 +126,11 @@ describe("VaultService", () => {
 				},
 			});
 			await expect(
-				service.getNotes(second.pagination.nextSkip, 2),
+				service.getNotes(
+					second.pagination.nextSkip,
+					2,
+					unauthorizedIdentity,
+				),
 			).resolves.toEqual({
 				notes: ["05.md"],
 				pagination: {
@@ -119,7 +140,9 @@ describe("VaultService", () => {
 					nextSkip: 5,
 				},
 			});
-			await expect(service.getNotes(6, 2)).resolves.toEqual({
+			await expect(
+				service.getNotes(6, 2, unauthorizedIdentity),
+			).resolves.toEqual({
 				notes: [],
 				pagination: {
 					skip: 6,
@@ -143,7 +166,9 @@ describe("VaultService", () => {
 				JSON.stringify([join(vaultDir, "04.md")]),
 			);
 
-			await expect(service.getNotes(0, 1)).resolves.toEqual({
+			await expect(
+				service.getNotes(0, 1, unauthorizedIdentity),
+			).resolves.toEqual({
 				notes: ["02.md"],
 				pagination: {
 					skip: 0,
@@ -152,13 +177,26 @@ describe("VaultService", () => {
 					nextSkip: 1,
 				},
 			});
-			await expect(service.getNotes(1, 1)).resolves.toEqual({
+			await expect(
+				service.getNotes(1, 1, unauthorizedIdentity),
+			).resolves.toEqual({
 				notes: ["03.md"],
 				pagination: {
 					skip: 1,
 					limit: 1,
 					hasMore: false,
 					nextSkip: 2,
+				},
+			});
+			await expect(
+				service.getNotes(0, 10, authorizedIdentity),
+			).resolves.toEqual({
+				notes: ["01.md", "02.md", "03.md", "04.md"],
+				pagination: {
+					skip: 0,
+					limit: 10,
+					hasMore: false,
+					nextSkip: 4,
 				},
 			});
 		});
@@ -170,9 +208,9 @@ describe("VaultService", () => {
 			Number.POSITIVE_INFINITY,
 			Number.MAX_SAFE_INTEGER + 1,
 		])("rejects invalid skip value %s", async (skip) => {
-			await expect(service.getNotes(skip, 10)).rejects.toBeInstanceOf(
-				RangeError,
-			);
+			await expect(
+				service.getNotes(skip, 10, unauthorizedIdentity),
+			).rejects.toBeInstanceOf(RangeError);
 		});
 
 		it.each([
@@ -183,14 +221,18 @@ describe("VaultService", () => {
 			Number.POSITIVE_INFINITY,
 			Number.MAX_SAFE_INTEGER + 1,
 		])("rejects invalid limit value %s", async (limit) => {
-			await expect(service.getNotes(0, limit)).rejects.toBeInstanceOf(
-				RangeError,
-			);
+			await expect(
+				service.getNotes(0, limit, unauthorizedIdentity),
+			).rejects.toBeInstanceOf(RangeError);
 		});
 
 		it("rejects a pagination window beyond safe integer precision", async () => {
 			await expect(
-				service.getNotes(Number.MAX_SAFE_INTEGER, 1),
+				service.getNotes(
+					Number.MAX_SAFE_INTEGER,
+					1,
+					unauthorizedIdentity,
+				),
 			).rejects.toBeInstanceOf(RangeError);
 		});
 	});
@@ -203,7 +245,10 @@ describe("VaultService", () => {
 			await writeFile(notePath, expected);
 
 			await expect(
-				service.readNote(join("folder", "note.md")),
+				service.readNote(
+					join("folder", "note.md"),
+					unauthorizedIdentity,
+				),
 			).resolves.toEqual({
 				notePath: await realpath(notePath),
 				content: expected,
@@ -216,7 +261,10 @@ describe("VaultService", () => {
 			const expected = Buffer.alloc(65_536, "a");
 			await writeFile(notePath, expected);
 
-			const result = await service.readNote("limit.md");
+			const result = await service.readNote(
+				"limit.md",
+				unauthorizedIdentity,
+			);
 
 			expect(Buffer.byteLength(result.content)).toBe(65_536);
 			expect(result.notePath).toBe(await realpath(notePath));
@@ -231,17 +279,17 @@ describe("VaultService", () => {
 				Buffer.alloc(65_537, "a"),
 			);
 
-			await expect(service.readNote("too-large.md")).rejects.toThrow(
-				/NOTE_TOO_LARGE: This note is 65537 bytes/,
-			);
+			await expect(
+				service.readNote("too-large.md", unauthorizedIdentity),
+			).rejects.toThrow(/NOTE_TOO_LARGE: This note is 65537 bytes/);
 		});
 
 		it("rejects traversal to an existing file outside the vault", async () => {
 			await writeFile(join(testDir, "outside.md"), "secret");
 
-			await expect(service.readNote("../outside.md")).rejects.toThrow(
-				"Note path must be inside the vault",
-			);
+			await expect(
+				service.readNote("../outside.md", unauthorizedIdentity),
+			).rejects.toThrow("Note path must be inside the vault");
 		});
 
 		it("rejects an absolute path outside the vault", async () => {
@@ -249,11 +297,28 @@ describe("VaultService", () => {
 			await writeFile(outsidePath, "secret");
 			expect(isAbsolute(outsidePath)).toBe(true);
 
-			await expect(service.readNote(outsidePath)).rejects.toThrow();
+			await expect(
+				service.readNote(outsidePath, unauthorizedIdentity),
+			).rejects.toThrow();
 		});
 
 		it("rejects a missing note", async () => {
-			await expect(service.readNote("missing.md")).rejects.toThrow();
+			await expect(
+				service.readNote("missing.md", unauthorizedIdentity),
+			).rejects.toThrow();
+		});
+
+		it("allows only an authorized identity to read a restricted note", async () => {
+			const notePath = join(vaultDir, "restricted-read.md");
+			const content = "---\nrestricted: true\n---\n# Private\n";
+			await writeFile(notePath, content);
+
+			await expect(
+				service.readNote("restricted-read.md", unauthorizedIdentity),
+			).rejects.toThrow("Note is restricted");
+			await expect(
+				service.readNote("restricted-read.md", authorizedIdentity),
+			).resolves.toMatchObject({ content });
 		});
 	});
 
@@ -276,6 +341,7 @@ describe("VaultService", () => {
 					"missing.md",
 					"replacement",
 					createHash("sha256").update("").digest("hex"),
+					unauthorizedIdentity,
 				),
 			).rejects.toMatchObject({ code: "ENOENT" });
 		});
@@ -292,7 +358,12 @@ describe("VaultService", () => {
 			await writeFile(notePath, initial);
 
 			await expect(
-				service.appendToNote("note.md", appended, versionOf(initial)),
+				service.appendToNote(
+					"note.md",
+					appended,
+					versionOf(initial),
+					unauthorizedIdentity,
+				),
 			).resolves.toEqual({ ok: true });
 			await expect(readFile(notePath, "utf8")).resolves.toBe(
 				initial + appended,
@@ -310,11 +381,13 @@ describe("VaultService", () => {
 				"repeated.md",
 				second,
 				versionOf(initial),
+				unauthorizedIdentity,
 			);
 			await service.appendToNote(
 				"repeated.md",
 				final,
 				versionOf(initial + second),
+				unauthorizedIdentity,
 			);
 
 			await expect(readFile(notePath, "utf8")).resolves.toBe(
@@ -328,7 +401,12 @@ describe("VaultService", () => {
 			await writeFile(notePath, initial);
 
 			await expect(
-				service.appendToNote("unchanged.md", "", versionOf(initial)),
+				service.appendToNote(
+					"unchanged.md",
+					"",
+					versionOf(initial),
+					unauthorizedIdentity,
+				),
 			).resolves.toEqual({ ok: true });
 			await expect(readFile(notePath, "utf8")).resolves.toBe(initial);
 		});
@@ -343,6 +421,7 @@ describe("VaultService", () => {
 					"version-conflict.md",
 					"must not be appended",
 					versionOf("Older contents"),
+					unauthorizedIdentity,
 				),
 			).rejects.toThrow("VERSION_CONFLICT");
 			await expect(readFile(notePath, "utf8")).resolves.toBe(initial);
@@ -354,6 +433,7 @@ describe("VaultService", () => {
 					"missing.md",
 					"new content",
 					versionOf(""),
+					unauthorizedIdentity,
 				),
 			).rejects.toThrow();
 		});
@@ -368,9 +448,22 @@ describe("VaultService", () => {
 					"restricted.md",
 					"must not be appended",
 					versionOf(initial),
+					unauthorizedIdentity,
 				),
 			).rejects.toThrow("Note is restricted");
 			await expect(readFile(notePath, "utf8")).resolves.toBe(initial);
+
+			await expect(
+				service.appendToNote(
+					"restricted.md",
+					"authorized append",
+					versionOf(initial),
+					authorizedIdentity,
+				),
+			).resolves.toEqual({ ok: true });
+			await expect(readFile(notePath, "utf8")).resolves.toBe(
+				initial + "authorized append",
+			);
 		});
 
 		it("rejects traversal outside the vault without modifying the file", async () => {
@@ -383,6 +476,7 @@ describe("VaultService", () => {
 					"../outside-append.md",
 					"must not be appended",
 					versionOf(initial),
+					unauthorizedIdentity,
 				),
 			).rejects.toThrow("Note path must be inside the vault");
 			await expect(readFile(outsidePath, "utf8")).resolves.toBe(initial);
@@ -428,7 +522,12 @@ describe("VaultService", () => {
 				await writeFile(notePath, content);
 
 				await expect(
-					service.readNoteLines("lines.md", start, end),
+					service.readNoteLines(
+						"lines.md",
+						start,
+						end,
+						unauthorizedIdentity,
+					),
 				).resolves.toEqual({
 					notePath: await realpath(notePath),
 					startLine: start,
@@ -447,7 +546,7 @@ describe("VaultService", () => {
 			await writeFile(join(vaultDir, "chunks.md"), content);
 
 			await expect(
-				service.readNoteLines("chunks.md", 2, 3),
+				service.readNoteLines("chunks.md", 2, 3, unauthorizedIdentity),
 			).resolves.toMatchObject({
 				content: `${secondLine}\nlast`,
 				version: createHash("sha256").update(content).digest("hex"),
@@ -458,7 +557,12 @@ describe("VaultService", () => {
 			const notePath = join(vaultDir, "version.md");
 			const content = "selected\n" + "unselected\n".repeat(3000);
 			await writeFile(notePath, content);
-			const first = await service.readNoteLines("version.md", 1, 1);
+			const first = await service.readNoteLines(
+				"version.md",
+				1,
+				1,
+				unauthorizedIdentity,
+			);
 			expect(first.content).toBe("selected");
 			expect(first.version).toBe(
 				createHash("sha256").update(content).digest("hex"),
@@ -466,7 +570,12 @@ describe("VaultService", () => {
 
 			const updated = content + "changed suffix";
 			await writeFile(notePath, updated);
-			const second = await service.readNoteLines("version.md", 1, 1);
+			const second = await service.readNoteLines(
+				"version.md",
+				1,
+				1,
+				unauthorizedIdentity,
+			);
 			expect(second.content).toBe(first.content);
 			expect(second.version).toBe(
 				createHash("sha256").update(updated).digest("hex"),
@@ -479,7 +588,7 @@ describe("VaultService", () => {
 			await writeFile(join(vaultDir, "bytes.md"), content);
 
 			await expect(
-				service.readNoteLines("bytes.md", 1, 2),
+				service.readNoteLines("bytes.md", 1, 2, unauthorizedIdentity),
 			).resolves.toMatchObject({
 				content: "one\n\ufffd",
 				version: createHash("sha256").update(content).digest("hex"),
@@ -503,15 +612,43 @@ describe("VaultService", () => {
 			"rejects invalid range %s–%s before accessing the file",
 			async (start, end) => {
 				await expect(
-					service.readNoteLines("missing.md", start, end),
+					service.readNoteLines(
+						"missing.md",
+						start,
+						end,
+						unauthorizedIdentity,
+					),
 				).rejects.toBeInstanceOf(RangeError);
 			},
 		);
 
 		it("rejects a missing note when given a valid line range", async () => {
 			await expect(
-				service.readNoteLines("missing.md", 1, 1),
+				service.readNoteLines("missing.md", 1, 1, unauthorizedIdentity),
 			).rejects.toMatchObject({ code: "ENOENT" });
+		});
+
+		it("allows only an authorized identity to read lines from a restricted note", async () => {
+			const notePath = join(vaultDir, "restricted-lines.md");
+			const content = "---\nrestricted: true\n---\nsecret\n";
+			await writeFile(notePath, content);
+
+			await expect(
+				service.readNoteLines(
+					"restricted-lines.md",
+					4,
+					4,
+					unauthorizedIdentity,
+				),
+			).rejects.toThrow("Note is restricted");
+			await expect(
+				service.readNoteLines(
+					"restricted-lines.md",
+					4,
+					4,
+					authorizedIdentity,
+				),
+			).resolves.toMatchObject({ content: "secret" });
 		});
 	});
 
@@ -549,7 +686,9 @@ describe("VaultService", () => {
 				].join("\n"),
 			);
 
-			await expect(service.getOutline("nested.md")).resolves.toEqual({
+			await expect(
+				service.getOutline("nested.md", unauthorizedIdentity),
+			).resolves.toEqual({
 				notePath: await realpath(notePath),
 				outline: [
 					{
@@ -631,7 +770,10 @@ describe("VaultService", () => {
 			);
 
 			await expect(
-				service.getOutline("starts-at-level-two.md"),
+				service.getOutline(
+					"starts-at-level-two.md",
+					unauthorizedIdentity,
+				),
 			).resolves.toEqual({
 				notePath: await realpath(notePath),
 				outline: [
@@ -662,7 +804,7 @@ describe("VaultService", () => {
 			await writeFile(notePath, "# Parent\n### Level three child");
 
 			await expect(
-				service.getOutline("skipped-level.md"),
+				service.getOutline("skipped-level.md", unauthorizedIdentity),
 			).resolves.toEqual({
 				notePath: await realpath(notePath),
 				outline: [
@@ -686,7 +828,10 @@ describe("VaultService", () => {
 			await writeFile(notePath, "Body text\n# Final heading");
 
 			await expect(
-				service.getOutline("no-trailing-newline.md"),
+				service.getOutline(
+					"no-trailing-newline.md",
+					unauthorizedIdentity,
+				),
 			).resolves.toEqual({
 				notePath: await realpath(notePath),
 				outline: [
@@ -697,8 +842,34 @@ describe("VaultService", () => {
 
 		it("rejects when the note does not exist", async () => {
 			await expect(
-				service.getOutline("missing.md"),
+				service.getOutline("missing.md", unauthorizedIdentity),
 			).rejects.toMatchObject({ code: "ENOENT" });
+		});
+
+		it("allows only an authorized identity to outline a restricted note", async () => {
+			const notePath = join(vaultDir, "restricted-outline.md");
+			await writeFile(
+				notePath,
+				"---\nrestricted: true\n---\n# Private heading\n",
+			);
+
+			await expect(
+				service.getOutline(
+					"restricted-outline.md",
+					unauthorizedIdentity,
+				),
+			).rejects.toThrow("Note is restricted");
+			await expect(
+				service.getOutline("restricted-outline.md", authorizedIdentity),
+			).resolves.toMatchObject({
+				outline: [
+					{
+						name: "Private heading",
+						lineNumber: 4,
+						outline: [],
+					},
+				],
+			});
 		});
 	});
 });
