@@ -46,6 +46,8 @@ describe("searchNotes process lifecycle", () => {
 		filenameSearch = vi.fn().mockResolvedValue({ stdout: "note.md\0" });
 		Object.assign(service, {
 			execFileAsync: filenameSearch,
+			// These tests isolate subprocess lifecycle; filesystem validation is tested separately.
+			filterNoteFiles: async (paths: string[]) => paths,
 		});
 	});
 

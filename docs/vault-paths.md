@@ -28,3 +28,14 @@ Restrictions apply before pagination to listings, filename lookup and content
 search, and before direct reads, outlines and existing-note edits. Symlink aliases
 cannot bypass a restricted target. Missing entries remain valid for future notes.
 Emails in `CAN_READ_RESTRICTED_NOTES` retain access to restricted notes.
+
+## Note files
+
+Note tools operate on regular files with a lowercase `.md` extension. `.obsidian`
+and `.git` directories are excluded at every depth, including via symlink aliases.
+The requested path and its resolved target must both qualify as note paths.
+Discovery filters these paths before pagination.
+
+Creation requires an existing parent directory. Its symlinks are resolved before
+the destination is checked against the vault boundary and internal-directory
+rules. Creation uses exclusive mode and never overwrites an existing destination.
