@@ -2,6 +2,11 @@ import { createReadStream, promises } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { buffer } from "node:stream/consumers";
 import type { Logger } from "pino";
+import type { RestrictionsService } from "../auth/restrictions.service.ts";
+import { promisify } from "node:util";
+import { execFile, spawn } from "node:child_process";
+import { createInterface } from "node:readline";
+import { createHash } from "node:crypto";
 
 enum HeadingLevels {
 	firstLevel,
@@ -14,9 +19,47 @@ enum HeadingLevels {
 
 export type Outline = {
 	name: string;
-	start: number;
-	// end: number;
+	lineNumber: number;
 	outline: Outline[];
+};
+
+export type RipgrepMatch = {
+	type: "match";
+	data: {
+		path: { text: string };
+		lines: { text: string };
+		line_number: number;
+		absolute_offset: number;
+		submatches: {
+			match: { text: string };
+			start: number;
+			end: number;
+		}[];
+	};
+};
+
+export type Matches = {
+	path: string;
+	line: number;
+	text: string;
+};
+
+export type Pagination = {
+	skip: number;
+	limit: number;
+	hasMore: boolean;
+	nextSkip: number;
+};
+
+export type ReadNoteResult = {
+	notePath: string;
+	content: string;
+	version: string;
+};
+
+export type GetNotesResult = {
+	notes: string[];
+	pagination: Pagination;
 };
 
 export type GetOutlineResult = {
@@ -24,34 +67,29 @@ export type GetOutlineResult = {
 	outline: Outline[];
 };
 
+export type SearchNotesResult = {
+	matches: Matches[];
+	pagination: Pagination;
+};
+
 export class VaultService {
-	private readonly vaultDir: string;
 	private readonly readNoteMaxSize: number = 64 * 1024;
 
+	private execFileAsync = promisify(execFile);
+
 	constructor(
-		vaultDir: string,
 		private readonly logger: Logger,
-	) {
-		this.vaultDir = vaultDir;
-	}
+		private readonly vaultDir: string,
+		private readonly restrictionsService: RestrictionsService,
+	) {}
 
 	public async getNotes(
-		page: number = 1,
-		pageSize: number = 50,
-	): Promise<string[]> {
-		if (
-			!Number.isSafeInteger(page) ||
-			page < 1 ||
-			!Number.isSafeInteger(pageSize) ||
-			pageSize < 1
-		) {
-			throw new RangeError("page and pageSize must be positive integers");
-		}
+		skip: number = 0,
+		limit: number = 50,
+	): Promise<GetNotesResult> {
+		this.validatePagination(skip, limit);
 
-		this.logger.debug(
-			{ page, pageSize, skip: (page - 1) * pageSize },
-			"Getting notes",
-		);
+		this.logger.debug({ skip, limit }, "Getting notes");
 
 		const entries = await promises.readdir(this.vaultDir, {
 			recursive: true,
@@ -65,11 +103,26 @@ export class VaultService {
 			)
 			.sort();
 
-		const start = (page - 1) * pageSize;
-		return paths.slice(start, start + pageSize);
+		const allowedPaths =
+			await this.restrictionsService.filterRestrictedNotes(
+				paths.map((path) => join(this.vaultDir, path)),
+			);
+		const notes = allowedPaths
+			.slice(skip, skip + limit)
+			.map((path) => relative(this.vaultDir, path));
+
+		return {
+			notes,
+			pagination: {
+				skip,
+				limit,
+				hasMore: skip + notes.length < allowedPaths.length,
+				nextSkip: skip + notes.length,
+			},
+		};
 	}
 
-	public async readNote(path: string): Promise<string> {
+	public async readNote(path: string): Promise<ReadNoteResult> {
 		if (
 			!Number.isSafeInteger(this.readNoteMaxSize) ||
 			this.readNoteMaxSize < 1
@@ -79,11 +132,7 @@ export class VaultService {
 			);
 		}
 
-		const notePath = await this.validatePath(path);
-
-		if (!notePath) {
-			throw new Error("Note path must be inside the vault");
-		}
+		const notePath = await this.validateAndFilterNote(path);
 
 		const fileStats = await promises.stat(notePath);
 		if (fileStats.size > this.readNoteMaxSize) {
@@ -94,29 +143,31 @@ export class VaultService {
 			);
 		}
 
+		const fileHash = createHash("sha256");
+
 		// end is inclusive: the extra byte tells us whether the note exceeds the limit.
-		const contents = await buffer(
+		const fileBuffer = await buffer(
 			createReadStream(notePath, { start: 0, end: this.readNoteMaxSize }),
 		);
-		if (contents.length > this.readNoteMaxSize) {
+		if (fileBuffer.length > this.readNoteMaxSize) {
 			throw new Error(
-				`NOTE_TOO_LARGE: This note is ${contents.length} bytes` +
+				`NOTE_TOO_LARGE: This note is ${fileBuffer.length} bytes` +
 					`\nreadNote supports notes up to ${this.readNoteMaxSize} bytes` +
 					"\nNo note content was returned",
 			);
 		}
 
-		return contents.toString("utf8");
+		return {
+			notePath: notePath,
+			content: fileBuffer.toString("utf8"),
+			version: fileHash.update(fileBuffer).digest("hex"),
+		};
 	}
 
 	public async getOutline(path: string): Promise<GetOutlineResult> {
 		this.logger.debug({ path }, "Getting note outline");
 
-		const notePath = await this.validatePath(path);
-		if (!notePath) {
-			this.logger.debug({ path }, "Rejected outline path outside vault");
-			throw new Error("Note path must be inside the vault");
-		}
+		const notePath = await this.validateAndFilterNote(path);
 
 		const stream = createReadStream(notePath, {
 			encoding: "utf8",
@@ -193,7 +244,7 @@ export class VaultService {
 							array[HeadingLevels.firstLevel] = [];
 						array[HeadingLevels.firstLevel].push({
 							name: match[2],
-							start: lineNumber,
+							lineNumber: lineNumber,
 							outline: [],
 						});
 						break;
@@ -203,7 +254,7 @@ export class VaultService {
 							array[HeadingLevels.secondLevel] = [];
 						array[HeadingLevels.secondLevel].push({
 							name: match[2],
-							start: lineNumber,
+							lineNumber: lineNumber,
 							outline: [],
 						});
 						break;
@@ -213,7 +264,7 @@ export class VaultService {
 							array[HeadingLevels.thirdLevel] = [];
 						array[HeadingLevels.thirdLevel].push({
 							name: match[2],
-							start: lineNumber,
+							lineNumber: lineNumber,
 							outline: [],
 						});
 						break;
@@ -223,7 +274,7 @@ export class VaultService {
 							array[HeadingLevels.fourthLevel] = [];
 						array[HeadingLevels.fourthLevel].push({
 							name: match[2],
-							start: lineNumber,
+							lineNumber: lineNumber,
 							outline: [],
 						});
 						break;
@@ -233,7 +284,7 @@ export class VaultService {
 							array[HeadingLevels.fifthLevel] = [];
 						array[HeadingLevels.fifthLevel].push({
 							name: match[2],
-							start: lineNumber,
+							lineNumber: lineNumber,
 							outline: [],
 						});
 					case HeadingLevels.sixthLevel:
@@ -242,7 +293,7 @@ export class VaultService {
 							array[HeadingLevels.sixthLevel] = [];
 						array[HeadingLevels.sixthLevel].push({
 							name: match[2],
-							start: lineNumber,
+							lineNumber: lineNumber,
 							outline: [],
 						});
 						break;
@@ -360,6 +411,150 @@ export class VaultService {
 		return finalOutline;
 	}
 
+	public async searchNotes(
+		query: string,
+		regex: boolean,
+		caseSensitive: boolean,
+		skip: number,
+		limit: number,
+	): Promise<SearchNotesResult> {
+		this.validatePagination(skip, limit);
+
+		const result: SearchNotesResult = {
+			matches: [],
+			pagination: { skip, limit, hasMore: false, nextSkip: skip },
+		};
+		const searchArgs = ["-g", "*.md"];
+
+		if (!regex) searchArgs.push("--fixed-strings");
+
+		searchArgs.push(caseSensitive ? "--case-sensitive" : "--ignore-case");
+		searchArgs.push("-e", query);
+		const fileNamesArgs = ["-l", "-0", ...searchArgs, "--", this.vaultDir];
+
+		let stdout: string;
+		try {
+			const search = await this.execFileAsync("rg", fileNamesArgs);
+			stdout = search.stdout;
+		} catch (error: unknown) {
+			if (error instanceof Error && "code" in error && error.code === 1)
+				return result;
+			throw error;
+		}
+
+		const fileMatches = stdout.split("\0").filter(Boolean);
+
+		if (fileMatches.length === 0) return result;
+
+		const allowedNotes =
+			await this.restrictionsService.filterRestrictedNotes(fileMatches);
+		if (allowedNotes.length === 0) return result;
+
+		const controller = new AbortController();
+
+		const { signal } = controller;
+
+		const matchesArgs = [
+			"--json",
+			"--sort=path",
+			...searchArgs,
+			"--",
+			...allowedNotes.toSorted(),
+		];
+		const rg = spawn("rg", matchesArgs, { signal });
+
+		let processError: Error | undefined;
+		let processClosed = false;
+		let stderr = "";
+		const closed = new Promise<{
+			code: number | null;
+			signal: NodeJS.Signals | null;
+		}>((resolve) => {
+			rg.on("error", (error) => {
+				if (signal.aborted && error.name === "AbortError") return;
+				processError ??= error;
+			});
+			rg.once("close", (code, exitSignal) => {
+				processClosed = true;
+				resolve({ code, signal: exitSignal });
+			});
+		});
+
+		rg.stderr.setEncoding("utf8");
+		rg.stderr.on("data", (chunk: string) => {
+			// Drain stderr without retaining an unbounded error log.
+			stderr = (stderr + chunk).slice(-8192);
+		});
+
+		const lineReader = createInterface({
+			input: rg.stdout,
+			crlfDelay: Infinity,
+		});
+
+		let skipped = 0;
+
+		const matches = result.matches;
+		let finishedReading = false;
+
+		try {
+			for await (const line of lineReader) {
+				const event: RipgrepMatch = JSON.parse(line);
+				if (event.type !== "match") continue;
+
+				if (skipped < skip) {
+					skipped++;
+					continue;
+				}
+
+				// An extra match confirms that another page exists.
+				if (matches.length === limit) {
+					result.pagination.hasMore = true;
+					controller.abort();
+					break;
+				}
+
+				matches.push({
+					path: event.data.path.text,
+					line: event.data.line_number,
+					text: event.data.lines.text,
+				});
+			}
+			finishedReading = true;
+		} finally {
+			lineReader.close();
+			if (!finishedReading && !processClosed && !signal.aborted) {
+				controller.abort();
+			}
+			await closed;
+		}
+
+		if (processError) throw processError;
+
+		const { code, signal: exitSignal } = await closed;
+		if (!signal.aborted && code !== 0 && code !== 1) {
+			throw new Error(
+				`ripgrep failed (${exitSignal ?? `exit code ${code}`}): ${stderr.trim()}`,
+			);
+		}
+
+		result.pagination.nextSkip = skip + matches.length;
+		return result;
+	}
+
+	private validatePagination(skip: number, limit: number): void {
+		if (
+			!Number.isSafeInteger(skip) ||
+			skip < 0 ||
+			!Number.isSafeInteger(limit) ||
+			limit < 1 ||
+			!Number.isSafeInteger(skip + limit)
+		) {
+			throw new RangeError(
+				"skip must be a non-negative safe integer, limit must be a positive safe integer, and skip + limit must be a safe integer",
+			);
+		}
+	}
+
 	private makeNode(array: Outline[][]): Outline[][] | undefined {
 		if (!array[0]) {
 			array.shift();
@@ -400,7 +595,7 @@ export class VaultService {
 		}
 	}
 
-	private async validatePath(path: string): Promise<string | false> {
+	private async validateAndFilterNote(path: string): Promise<string> {
 		const vaultPath = await promises.realpath(this.vaultDir);
 
 		const notePath = await promises.realpath(join(vaultPath, path));
@@ -411,8 +606,19 @@ export class VaultService {
 			relativePath.startsWith(`..${sep}`) ||
 			isAbsolute(relativePath)
 		) {
-			return false;
+			throw new Error("Note path must be inside the vault");
 		}
-		return notePath;
+
+		const validNotePath =
+			await this.restrictionsService.filterRestrictedNotes([notePath]);
+
+		if (validNotePath.length === 0) {
+			throw new Error("Note is restricted");
+		}
+
+		if (!validNotePath[0])
+			throw new Error("Note is gone... somehow idk man");
+
+		return validNotePath[0];
 	}
 }

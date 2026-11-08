@@ -21,10 +21,8 @@ const appConfigSchema = z.object({
 			value.split(",").map((hostname) => hostname.trim().toLowerCase()),
 		)
 		.pipe(z.array(z.hostname()).min(1)),
-	vaultDir: z
-		.string()
-		.trim()
-		.default("/home/daniel/obsidian-livesync-cli/vault"),
+	vaultDir: z.string().trim().default("./vault"),
+	restrictedNotesJson: z.string().trim(),
 });
 
 export type AppConfig = z.infer<typeof appConfigSchema>;
@@ -55,5 +53,6 @@ export function loadConfig(env?: NodeJS.ProcessEnv): AppConfig {
 		policyAud: env.POLICY_AUD,
 		allowedHosts: env.ALLOWED_HOSTS,
 		vaultDir: env.VAULT_DIR,
+		restrictedNotesPaths: env.RESTRICTED_NOTES_JSON,
 	});
 }

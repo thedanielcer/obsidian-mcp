@@ -6,7 +6,7 @@ import { z } from "zod";
 export class RestrictionsService {
 	constructor(
 		private readonly logger: Logger,
-		private readonly restrictedNotesPaths: string,
+		private readonly restrictedNotesPathsJson: string,
 	) {}
 
 	public async isRestricted(notePath: string): Promise<boolean> {
@@ -45,7 +45,7 @@ export class RestrictionsService {
 	public async filterRestrictedNotes(notePaths: string[]): Promise<string[]> {
 		const schema = z.array(z.string());
 
-		const fileContents = await readFile(this.restrictedNotesPaths, "utf8");
+		const fileContents = await readFile(this.restrictedNotesPathsJson, "utf8");
 
 		const restrictedPathsSet = new Set(
 			schema.parse(JSON.parse(fileContents)),

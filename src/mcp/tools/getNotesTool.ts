@@ -14,16 +14,26 @@ export function registerGetNotesTool(
 			description:
 				"Tool to retrieve notes from the vault by path with pagination support",
 			inputSchema: z.object({
-				page: z.number().describe("The page number to retrieve"),
-				pageSize: z
+				skip: z
 					.number()
-					.describe("The number of notes to retrieve per page"),
+					.int()
+					.min(0)
+					.max(Number.MAX_SAFE_INTEGER)
+					.default(0)
+					.describe("The number of accessible notes to skip"),
+				limit: z
+					.number()
+					.int()
+					.min(1)
+					.max(Number.MAX_SAFE_INTEGER)
+					.default(50)
+					.describe("The maximum number of notes to return"),
 			}),
 		},
-		async ({ page, pageSize }) => {
-			const notes = await vaultService.getNotes(page, pageSize);
+		async ({ skip, limit }) => {
+			const result = await vaultService.getNotes(skip, limit);
 			return {
-				content: [{ type: "text", text: JSON.stringify(notes) }],
+				content: [{ type: "text", text: JSON.stringify(result) }],
 			};
 		},
 	);

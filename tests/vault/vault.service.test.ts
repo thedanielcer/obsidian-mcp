@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -5,10 +6,12 @@ import pino from "pino";
 import pretty from "pino-pretty";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VaultService } from "../../src/vault/vault.service.ts";
+import { RestrictionsService } from "../../src/auth/restrictions.service.ts";
 
 describe("VaultService", () => {
 	let testDir: string;
 	let vaultDir: string;
+	let restrictionsService: RestrictionsService;
 	let service: VaultService;
 
 	beforeEach(async () => {
@@ -28,7 +31,10 @@ describe("VaultService", () => {
 							sync: true,
 						}),
 					);
-		service = new VaultService(vaultDir, logger);
+		const restrictedPaths = join(testDir, "restrictions.json");
+		await writeFile(restrictedPaths, "[]");
+		restrictionsService = new RestrictionsService(logger, restrictedPaths);
+		service = new VaultService(logger, vaultDir, restrictionsService);
 	});
 
 	afterEach(async () => {
@@ -45,15 +51,27 @@ describe("VaultService", () => {
 				writeFile(join(vaultDir, "ignored.txt"), "not a note"),
 			]);
 
-			await expect(service.getNotes()).resolves.toEqual([
-				"a.md",
-				"b.md",
-				join("folder", "c.md"),
-			]);
+			await expect(service.getNotes()).resolves.toEqual({
+				notes: ["a.md", "b.md", join("folder", "c.md")],
+				pagination: {
+					skip: 0,
+					limit: 50,
+					hasMore: false,
+					nextSkip: 3,
+				},
+			});
 		});
 
 		it("returns an empty list for an empty vault", async () => {
-			await expect(service.getNotes()).resolves.toEqual([]);
+			await expect(service.getNotes()).resolves.toEqual({
+				notes: [],
+				pagination: {
+					skip: 0,
+					limit: 50,
+					hasMore: false,
+					nextSkip: 0,
+				},
+			});
 		});
 
 		it("paginates the sorted note list", async () => {
@@ -63,56 +81,141 @@ describe("VaultService", () => {
 				),
 			);
 
-			await expect(service.getNotes(2, 2)).resolves.toEqual([
-				"03.md",
-				"04.md",
-			]);
-			await expect(service.getNotes(4, 2)).resolves.toEqual([]);
+			const first = await service.getNotes(0, 2);
+			expect(first).toEqual({
+				notes: ["01.md", "02.md"],
+				pagination: {
+					skip: 0,
+					limit: 2,
+					hasMore: true,
+					nextSkip: 2,
+				},
+			});
+			const second = await service.getNotes(first.pagination.nextSkip, 2);
+			expect(second).toEqual({
+				notes: ["03.md", "04.md"],
+				pagination: {
+					skip: 2,
+					limit: 2,
+					hasMore: true,
+					nextSkip: 4,
+				},
+			});
+			await expect(
+				service.getNotes(second.pagination.nextSkip, 2),
+			).resolves.toEqual({
+				notes: ["05.md"],
+				pagination: {
+					skip: 4,
+					limit: 2,
+					hasMore: false,
+					nextSkip: 5,
+				},
+			});
+			await expect(service.getNotes(6, 2)).resolves.toEqual({
+				notes: [],
+				pagination: {
+					skip: 6,
+					limit: 2,
+					hasMore: false,
+					nextSkip: 6,
+				},
+			});
 		});
 
-		it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
-			"rejects invalid page value %s",
-			async (page) => {
-				await expect(service.getNotes(page, 10)).rejects.toThrow(
-					new RangeError(
-						"page and pageSize must be positive integers",
-					),
-				);
-			},
-		);
+		it("excludes restricted notes before applying skip and limit", async () => {
+			await writeFile(
+				join(vaultDir, "01.md"),
+				"---\nrestricted: true\n---\nsecret\n",
+			);
+			await writeFile(join(vaultDir, "02.md"), "visible\n");
+			await writeFile(join(vaultDir, "03.md"), "visible\n");
+			await writeFile(join(vaultDir, "04.md"), "secret\n");
+			await writeFile(
+				join(testDir, "restrictions.json"),
+				JSON.stringify([join(vaultDir, "04.md")]),
+			);
 
-		it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
-			"rejects invalid page-size value %s",
-			async (pageSize) => {
-				await expect(service.getNotes(1, pageSize)).rejects.toThrow(
-					new RangeError(
-						"page and pageSize must be positive integers",
-					),
-				);
-			},
-		);
+			await expect(service.getNotes(0, 1)).resolves.toEqual({
+				notes: ["02.md"],
+				pagination: {
+					skip: 0,
+					limit: 1,
+					hasMore: true,
+					nextSkip: 1,
+				},
+			});
+			await expect(service.getNotes(1, 1)).resolves.toEqual({
+				notes: ["03.md"],
+				pagination: {
+					skip: 1,
+					limit: 1,
+					hasMore: false,
+					nextSkip: 2,
+				},
+			});
+		});
+
+		it.each([
+			-1,
+			1.5,
+			Number.NaN,
+			Number.POSITIVE_INFINITY,
+			Number.MAX_SAFE_INTEGER + 1,
+		])("rejects invalid skip value %s", async (skip) => {
+			await expect(service.getNotes(skip, 10)).rejects.toBeInstanceOf(
+				RangeError,
+			);
+		});
+
+		it.each([
+			0,
+			-1,
+			1.5,
+			Number.NaN,
+			Number.POSITIVE_INFINITY,
+			Number.MAX_SAFE_INTEGER + 1,
+		])("rejects invalid limit value %s", async (limit) => {
+			await expect(service.getNotes(0, limit)).rejects.toBeInstanceOf(
+				RangeError,
+			);
+		});
+
+		it("rejects a pagination window beyond safe integer precision", async () => {
+			await expect(
+				service.getNotes(Number.MAX_SAFE_INTEGER, 1),
+			).rejects.toBeInstanceOf(RangeError);
+		});
 	});
 
 	describe("readNote", () => {
 		it("reads a nested UTF-8 Markdown note", async () => {
 			await mkdir(join(vaultDir, "folder"));
 			const expected = "# H\u00e9llo\n\nA note \u{1f44b}";
-			await writeFile(join(vaultDir, "folder", "note.md"), expected);
+			const notePath = join(vaultDir, "folder", "note.md");
+			await writeFile(notePath, expected);
 
 			await expect(
 				service.readNote(join("folder", "note.md")),
-			).resolves.toBe(expected);
+			).resolves.toEqual({
+				notePath: await realpath(notePath),
+				content: expected,
+				version: createHash("sha256").update(expected).digest("hex"),
+			});
 		});
 
 		it("reads a note at the 65,536-byte limit", async () => {
-			await writeFile(
-				join(vaultDir, "limit.md"),
-				Buffer.alloc(65_536, "a"),
+			const notePath = join(vaultDir, "limit.md");
+			const expected = Buffer.alloc(65_536, "a");
+			await writeFile(notePath, expected);
+
+			const result = await service.readNote("limit.md");
+
+			expect(Buffer.byteLength(result.content)).toBe(65_536);
+			expect(result.notePath).toBe(await realpath(notePath));
+			expect(result.version).toBe(
+				createHash("sha256").update(expected).digest("hex"),
 			);
-
-			const contents = await service.readNote("limit.md");
-
-			expect(Buffer.byteLength(contents)).toBe(65_536);
 		});
 
 		it("rejects a note larger than 65,536 bytes", async () => {
@@ -186,44 +289,48 @@ describe("VaultService", () => {
 				outline: [
 					{
 						name: "Parent",
-						start: 5,
+						lineNumber: 5,
 						outline: [
 							{
 								name: "Child",
-								start: 7,
+								lineNumber: 7,
 								outline: [
 									{
 										name: "Grandchild",
-										start: 8,
+										lineNumber: 8,
 										outline: [],
 									},
 								],
 							},
-							{ name: "Second child", start: 9, outline: [] },
+							{
+								name: "Second child",
+								lineNumber: 9,
+								outline: [],
+							},
 						],
 					},
 					{
 						name: "Second parent",
-						start: 10,
+						lineNumber: 10,
 						outline: [
 							{
 								name: "Child to second parent",
-								start: 11,
+								lineNumber: 11,
 								outline: [
 									{
 										name: "Grandchild to child of second parent",
-										start: 12,
+										lineNumber: 12,
 										outline: [],
 									},
 								],
 							},
 							{
 								name: "Second child to second parent",
-								start: 13,
+								lineNumber: 13,
 								outline: [
 									{
 										name: "Grandchild to second child of second parent",
-										start: 14,
+										lineNumber: 14,
 										outline: [],
 									},
 								],
@@ -232,15 +339,15 @@ describe("VaultService", () => {
 					},
 					{
 						name: "Third parent",
-						start: 15,
+						lineNumber: 15,
 						outline: [
 							{
 								name: "Child to third parent",
-								start: 16,
+								lineNumber: 16,
 								outline: [
 									{
 										name: "Grandchild to child to third parent",
-										start: 21,
+										lineNumber: 21,
 										outline: [],
 									},
 								],
@@ -265,15 +372,21 @@ describe("VaultService", () => {
 				outline: [
 					{
 						name: "Starts at level two",
-						start: 1,
+						lineNumber: 1,
 						outline: [
-							{ name: "Nested below it", start: 2, outline: [] },
+							{
+								name: "Nested below it",
+								lineNumber: 2,
+								outline: [],
+							},
 						],
 					},
 					{
 						name: "Another parent",
-						start: 3,
-						outline: [{ name: "Its child", start: 4, outline: [] }],
+						lineNumber: 3,
+						outline: [
+							{ name: "Its child", lineNumber: 4, outline: [] },
+						],
 					},
 				],
 			});
@@ -290,11 +403,11 @@ describe("VaultService", () => {
 				outline: [
 					{
 						name: "Parent",
-						start: 1,
+						lineNumber: 1,
 						outline: [
 							{
 								name: "Level three child",
-								start: 2,
+								lineNumber: 2,
 								outline: [],
 							},
 						],
@@ -311,7 +424,9 @@ describe("VaultService", () => {
 				service.getOutline("no-trailing-newline.md"),
 			).resolves.toEqual({
 				notePath: await realpath(notePath),
-				outline: [{ name: "Final heading", start: 2, outline: [] }],
+				outline: [
+					{ name: "Final heading", lineNumber: 2, outline: [] },
+				],
 			});
 		});
 	});
