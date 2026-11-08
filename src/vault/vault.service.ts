@@ -1021,14 +1021,13 @@ export class VaultService {
 	): Promise<string> {
 		const vaultPath = await promises.realpath(this.vaultDir);
 
-		const notePath = await promises.realpath(
-			resolveNotePath(vaultPath, path),
-		);
+		const requestedPath = resolveNotePath(vaultPath, path);
+		const notePath = await promises.realpath(requestedPath);
 		assertWithinVault(vaultPath, notePath);
 
 		const validNotePath =
 			await this.restrictionsService.filterRestrictedNotes(
-				[notePath],
+				[requestedPath],
 				identity,
 			);
 
@@ -1041,6 +1040,6 @@ export class VaultService {
 				"Note is gone... somehow idk man, this shouldn't have happended, try something else",
 			);
 
-		return validNotePath[0];
+		return notePath;
 	}
 }

@@ -36,6 +36,7 @@ describe("searchNotes process lifecycle", () => {
 			logger,
 			"",
 			createRestrictedReaderEmails(),
+			process.cwd(),
 		);
 		vi.spyOn(restrictions, "filterRestrictedNotes").mockImplementation(
 			async (paths) => paths,

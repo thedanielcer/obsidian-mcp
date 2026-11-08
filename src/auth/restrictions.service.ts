@@ -1,15 +1,41 @@
 import { createReadStream } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, join, basename, resolve, win32 } from "node:path";
 import type { Logger } from "pino";
 import { z } from "zod";
 import type { CallerIdentity } from "./caller-identity.ts";
+import {
+	assertWithinVault,
+	isWithinVault,
+	resolveNotePath,
+} from "../vault/vault-paths.ts";
+
+// Retain restrictions for paths that do not exist yet, resolving existing ancestors.
+async function canonicalRestriction(path: string): Promise<string> {
+	try {
+		return await realpath(path);
+	} catch (error) {
+		if (
+			!(error instanceof Error) ||
+			!("code" in error) ||
+			error.code !== "ENOENT"
+		)
+			throw error;
+		const parent = dirname(path);
+		if (parent === path) throw error;
+		return join(await canonicalRestriction(parent), basename(path));
+	}
+}
 
 export class RestrictionsService {
 	constructor(
 		private readonly logger: Logger,
 		private readonly restrictedNotesPathsJson: string,
 		private readonly canReadRestrictedNotes: Set<string>,
-	) {}
+		private readonly vaultDir: string,
+	) {
+		this.vaultDir = resolve(vaultDir);
+	}
 
 	public async isRestricted(notePath: string): Promise<boolean> {
 		const stream = createReadStream(notePath, {
@@ -49,27 +75,49 @@ export class RestrictionsService {
 		identity: CallerIdentity,
 	): Promise<string[]> {
 		if (this.canReadRestrictedNotes.has(identity.email)) return notePaths;
-		const schema = z.array(z.string());
+		const schema = z.array(z.string().min(1));
 
 		const fileContents = await readFile(
 			this.restrictedNotesPathsJson,
 			"utf8",
 		);
 
-		const restrictedPathsSet = new Set(
-			schema.parse(JSON.parse(fileContents)),
-		);
-
-		for (let i = notePaths.length - 1; i >= 0; i--) {
-			const path = notePaths[i];
-			if (!path) continue;
+		const vaultPath = await realpath(this.vaultDir);
+		const restrictedPaths: string[] = [];
+		for (const entry of schema.parse(JSON.parse(fileContents))) {
+			const normalized = entry.replace(/\\/g, "/");
 			if (
-				restrictedPathsSet.has(path) ||
-				(await this.isRestricted(path))
+				!isAbsolute(normalized) &&
+				(win32.isAbsolute(entry) || /^[a-z]:/i.test(entry))
 			) {
-				notePaths.splice(i, 1);
+				throw new Error(
+					"Absolute restriction paths must use the server's filesystem format",
+				);
 			}
+			const path = isAbsolute(normalized)
+				? resolve(normalized)
+				: resolveNotePath(vaultPath, normalized);
+			const canonical = await canonicalRestriction(path);
+			assertWithinVault(vaultPath, canonical);
+			restrictedPaths.push(path, canonical);
 		}
-		return notePaths;
+
+		const allowed: string[] = [];
+		for (const path of notePaths) {
+			const absolute = resolve(path);
+			const canonical = await realpath(absolute);
+			if (!isWithinVault(vaultPath, canonical)) continue;
+			// Check both the discovered path and its target so aliases cannot bypass a restriction.
+			if (
+				restrictedPaths.some(
+					(restricted) =>
+						isWithinVault(restricted, absolute) ||
+						isWithinVault(restricted, canonical),
+				)
+			)
+				continue;
+			if (!(await this.isRestricted(canonical))) allowed.push(path);
+		}
+		return allowed;
 	}
 }
