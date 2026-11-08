@@ -12,19 +12,20 @@ export function registerReadNoteTool(
 		"readNote",
 		{
 			description:
-				"Read an entire note by its path relative to the vault, maximum note size supported is 65,536 bytes",
+				"Read an accessible note up to 65,536 bytes. Returns its path, content, and SHA-256 version for subsequent edits. Use readNoteLines for larger notes.",
 			inputSchema: z.object({
 				path: z
 					.string()
+					.min(1)
 					.describe(
 						"The path of the note to read relative to the vault",
 					),
 			}),
 		},
 		async ({ path }) => {
-			const note = await vaultService.readNote(path);
+			const note = await vaultService.readNote(path, identity);
 			return {
-				content: [{ type: "text", text: note }],
+				content: [{ type: "text", text: JSON.stringify(note) }],
 			};
 		},
 	);

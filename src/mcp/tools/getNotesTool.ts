@@ -12,7 +12,7 @@ export function registerGetNotesTool(
 		"getNotes",
 		{
 			description:
-				"Tool to retrieve notes from the vault by path with pagination support",
+				"List accessible Markdown note paths relative to the vault in sorted order, with pagination metadata.",
 			inputSchema: z.object({
 				skip: z
 					.number()
@@ -31,7 +31,7 @@ export function registerGetNotesTool(
 			}),
 		},
 		async ({ skip, limit }) => {
-			const result = await vaultService.getNotes(skip, limit);
+			const result = await vaultService.getNotes(skip, limit, identity);
 			return {
 				content: [{ type: "text", text: JSON.stringify(result) }],
 			};

@@ -12,17 +12,18 @@ export function registerGetOutlineTool(
 		"getOutline",
 		{
 			description:
-				"Read an entire note by its path relative to the vault, maximum note size supported is 65,536 bytes",
+				"Get the heading hierarchy of an accessible Markdown note, including heading text, 1-based line numbers, and nested headings.",
 			inputSchema: z.object({
 				path: z
 					.string()
+					.min(1)
 					.describe(
-						"The path of the note to read relative to the vault",
+						"The path of the note to outline relative to the vault",
 					),
 			}),
 		},
 		async ({ path }) => {
-			const outline = await vaultService.getOutline(path);
+			const outline = await vaultService.getOutline(path, identity);
 			return {
 				content: [{ type: "text", text: JSON.stringify(outline) }],
 			};
