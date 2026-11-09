@@ -88,11 +88,11 @@ describe("searchNotes pagination with ripgrep", () => {
 		});
 		expect([...first.matches, ...second.matches, ...third.matches]).toEqual(
 			[
-				{ path: join(vaultDir, "a.md"), line: 1, text: "needle a1\n" },
-				{ path: join(vaultDir, "a.md"), line: 2, text: "needle a2\n" },
-				{ path: join(vaultDir, "b.md"), line: 1, text: "needle b1\n" },
-				{ path: join(vaultDir, "b.md"), line: 2, text: "needle b2\n" },
-				{ path: join(vaultDir, "b.md"), line: 3, text: "needle b3\n" },
+				{ path: "a.md", line: 1, text: "needle a1\n" },
+				{ path: "a.md", line: 2, text: "needle a2\n" },
+				{ path: "b.md", line: 1, text: "needle b1\n" },
+				{ path: "b.md", line: 2, text: "needle b2\n" },
+				{ path: "b.md", line: 3, text: "needle b3\n" },
 			],
 		);
 	});
@@ -185,7 +185,7 @@ describe("searchNotes pagination with ripgrep", () => {
 		).resolves.toEqual({
 			matches: [
 				{
-					path: join(vaultDir, "a.md"),
+					path: "a.md",
 					line: 4,
 					text: "needle\n",
 				},
@@ -234,14 +234,14 @@ describe("searchNotes pagination with ripgrep", () => {
 
 		expect(first).toEqual({
 			matches: [
-				{ path: firstPublic, line: 1, text: "needle public 1\n" },
-				{ path: firstPublic, line: 2, text: "needle public 2\n" },
+				{ path: "c-public.md", line: 1, text: "needle public 1\n" },
+				{ path: "c-public.md", line: 2, text: "needle public 2\n" },
 			],
 			pagination: { skip: 0, limit: 2, hasMore: true, nextSkip: 2 },
 		});
 		expect(second).toEqual({
 			matches: [
-				{ path: secondPublic, line: 1, text: "needle public 3\n" },
+				{ path: "d-public.md", line: 1, text: "needle public 3\n" },
 			],
 			pagination: { skip: 2, limit: 2, hasMore: false, nextSkip: 3 },
 		});
@@ -258,12 +258,12 @@ describe("searchNotes pagination with ripgrep", () => {
 		).resolves.toEqual({
 			matches: [
 				{
-					path: restrictedByFrontmatter,
+					path: "a-restricted-by-frontmatter.md",
 					line: 4,
 					text: "needle private 1\n",
 				},
 				{
-					path: restrictedByFrontmatter,
+					path: "a-restricted-by-frontmatter.md",
 					line: 5,
 					text: "needle private 2\n",
 				},
