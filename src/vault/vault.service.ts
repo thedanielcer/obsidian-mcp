@@ -2,6 +2,7 @@ import { createReadStream, promises } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { buffer } from "node:stream/consumers";
+import { writeNoteAtomically } from "./atomic-note-write.ts";
 import { StringDecoder } from "node:string_decoder";
 import type { Logger } from "pino";
 import type { RestrictionsService } from "../auth/restrictions.service.ts";
@@ -761,19 +762,7 @@ export class VaultService {
 	): Promise<{ ok: true }> {
 		const notePath = await this.validateAndFilterNote(path, identity);
 
-		const stream = createReadStream(notePath, { highWaterMark: 10 * 1024 });
-		const hash = createHash("sha256");
-
-		for await (const chunk of stream) {
-			hash.update(chunk);
-		}
-
-		if (expectedVersion !== hash.digest("hex"))
-			throw new Error(
-				"VERSION_CONFLICT: The note has changed; read it again before editing",
-			);
-
-		await writeFile(notePath, content, { flag: "w" });
+		await writeNoteAtomically(notePath, content, expectedVersion);
 
 		return { ok: true };
 	}
@@ -953,19 +942,12 @@ export class VaultService {
 	): Promise<{ ok: true }> {
 		const notePath = await this.validateAndFilterNote(path, identity);
 
-		const hash = createHash("sha256");
-
-		const fileBuffer = await buffer(createReadStream(notePath));
-		hash.update(fileBuffer);
-
-		if (expectedVersion !== hash.digest("hex"))
-			throw new Error(
-				"VERSION_CONFLICT: The note has changed; read it again before editing",
-			);
-
-		const finalContent = content + fileBuffer.toString("utf8");
-
-		await writeFile(notePath, finalContent, { flag: "w" });
+		await writeNoteAtomically(
+			notePath,
+			content,
+			expectedVersion,
+			"prepend",
+		);
 
 		return { ok: true };
 	}
