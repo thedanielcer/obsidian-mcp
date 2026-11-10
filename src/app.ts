@@ -8,6 +8,14 @@ import { VaultService } from "./vault/vault.service.ts";
 import { RestrictionsService } from "./auth/restrictions.service.ts";
 
 export function createApp(config: AppConfig, logger: Logger) {
+	if (
+		config.nodeEnv === "development" &&
+		!["127.0.0.1", "::1", "localhost"].includes(config.host)
+	) {
+		throw new Error(
+			"Development mode requires a loopback HOST (127.0.0.1, ::1, or localhost)",
+		);
+	}
 	const app = createMcpExpressApp({
 		host: config.host,
 		allowedHosts: config.allowedHosts,
@@ -32,7 +40,17 @@ export function createApp(config: AppConfig, logger: Logger) {
 	app.get("/health", healthHandler);
 
 	if (config.nodeEnv === "development") {
-		app.all("/mcp", mcpHttpHandler);
+		app.all(
+			"/mcp",
+			(_req, res, next) => {
+				res.locals.identity = {
+					userId: "development",
+					email: "development@example.invalid",
+				};
+				next();
+			},
+			mcpHttpHandler,
+		);
 	} else {
 		app.all("/mcp", authMiddleware, mcpHttpHandler);
 	}
