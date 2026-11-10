@@ -37,6 +37,7 @@ describe("RestrictionsService", () => {
 			logger,
 			restrictedNotesPath,
 			createRestrictedReaderEmails(),
+			testDir,
 		);
 	});
 

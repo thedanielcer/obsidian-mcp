@@ -31,6 +31,7 @@ describe("getNotePathByNoteName", () => {
 				logger,
 				restrictedPaths,
 				createRestrictedReaderEmails(),
+				vaultDir,
 			),
 		);
 	});

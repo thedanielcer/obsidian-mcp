@@ -84,6 +84,7 @@ describe("MCP vault tool registrations", () => {
 				logger,
 				restrictionsPath,
 				createRestrictedReaderEmails(),
+				vaultDir,
 			),
 		);
 		servers = [];

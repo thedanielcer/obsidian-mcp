@@ -26,7 +26,7 @@ beforeEach(async () => {
 	service = new VaultService(
 		logger,
 		relative(process.cwd(), vault),
-		new RestrictionsService(logger, restrictions, new Set()),
+		new RestrictionsService(logger, restrictions, new Set(), vault),
 	);
 });
 
@@ -114,6 +114,7 @@ it("uses the canonical vault root when the configured vault is a directory symli
 			logger,
 			join(root, "restrictions.json"),
 			new Set(),
+			vault,
 		),
 	);
 	expect((await linked.getNotes(0, 50, identity)).notes).toEqual([

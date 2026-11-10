@@ -42,6 +42,7 @@ describe("VaultService", () => {
 			logger,
 			restrictedPaths,
 			createRestrictedReaderEmails(),
+			vaultDir,
 		);
 		service = new VaultService(logger, vaultDir, restrictionsService);
 	});

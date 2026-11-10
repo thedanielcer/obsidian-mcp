@@ -41,6 +41,7 @@ describe("VaultService note mutations", () => {
 				logger,
 				restrictedPaths,
 				createRestrictedReaderEmails(),
+				vaultDir,
 			),
 		);
 	});

@@ -17,6 +17,7 @@ export function createApp(config: AppConfig, logger: Logger) {
 		logger.child({ source: "RestrictionsService" }),
 		config.restrictedNotesJson,
 		new Set(config.canReadRestrictedNotes),
+		config.vaultDir,
 	);
 
 	const vaultService = new VaultService(

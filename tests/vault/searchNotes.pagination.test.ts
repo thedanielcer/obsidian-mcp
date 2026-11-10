@@ -28,6 +28,7 @@ describe("searchNotes pagination with ripgrep", () => {
 				logger,
 				restrictedPaths,
 				createRestrictedReaderEmails(),
+				vaultDir,
 			),
 		);
 	});

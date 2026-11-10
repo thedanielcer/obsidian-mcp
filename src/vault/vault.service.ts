@@ -1,5 +1,5 @@
 import { createReadStream, promises } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { buffer } from "node:stream/consumers";
 import { StringDecoder } from "node:string_decoder";
@@ -13,7 +13,8 @@ import { writeFile } from "node:fs/promises";
 import type { CallerIdentity } from "../auth/caller-identity.ts";
 
 import {
-	assertWithinVault,
+	assertMarkdownNotePath,
+	isMarkdownNotePath,
 	resolveNotePath,
 	toNotePath,
 } from "./vault-paths.ts";
@@ -114,7 +115,11 @@ export class VaultService {
 	): Promise<{ ok: true }> {
 		const vaultPath = await promises.realpath(this.vaultDir);
 
-		const notePath = resolveNotePath(vaultPath, path);
+		const requestedPath = resolveNotePath(vaultPath, path);
+		assertMarkdownNotePath(vaultPath, requestedPath);
+		const parentPath = await promises.realpath(dirname(requestedPath));
+		const notePath = join(parentPath, basename(requestedPath));
+		assertMarkdownNotePath(vaultPath, notePath);
 
 		try {
 			await writeFile(notePath, content, { flag: "wx" });
@@ -159,9 +164,13 @@ export class VaultService {
 			)
 			.sort();
 
+		const noteFiles = await this.filterNoteFiles(
+			paths.map((path) => join(vaultPath, path)),
+			vaultPath,
+		);
 		const allowedPaths =
 			await this.restrictionsService.filterRestrictedNotes(
-				paths.map((path) => join(vaultPath, path)),
+				noteFiles,
 				identity,
 			);
 		const notes = allowedPaths
@@ -220,7 +229,7 @@ export class VaultService {
 
 		const allowedNotes =
 			await this.restrictionsService.filterRestrictedNotes(
-				fileMatches,
+				await this.filterNoteFiles(fileMatches, vaultPath),
 				identity,
 			);
 		if (allowedNotes.length === 0) return result;
@@ -648,7 +657,7 @@ export class VaultService {
 
 		const allowedNotes =
 			await this.restrictionsService.filterRestrictedNotes(
-				fileMatches,
+				await this.filterNoteFiles(fileMatches, vaultPath),
 				identity,
 			);
 		if (allowedNotes.length === 0) return result;
@@ -1021,14 +1030,16 @@ export class VaultService {
 	): Promise<string> {
 		const vaultPath = await promises.realpath(this.vaultDir);
 
-		const notePath = await promises.realpath(
-			resolveNotePath(vaultPath, path),
-		);
-		assertWithinVault(vaultPath, notePath);
+		const requestedPath = resolveNotePath(vaultPath, path);
+		assertMarkdownNotePath(vaultPath, requestedPath);
+		const notePath = await promises.realpath(requestedPath);
+		assertMarkdownNotePath(vaultPath, notePath);
+		if (!(await promises.stat(notePath)).isFile())
+			throw new Error("Note path must be a regular file");
 
 		const validNotePath =
 			await this.restrictionsService.filterRestrictedNotes(
-				[notePath],
+				[requestedPath],
 				identity,
 			);
 
@@ -1041,6 +1052,21 @@ export class VaultService {
 				"Note is gone... somehow idk man, this shouldn't have happended, try something else",
 			);
 
-		return validNotePath[0];
+		return notePath;
+	}
+
+	private async filterNoteFiles(
+		paths: string[],
+		vaultPath: string,
+	): Promise<string[]> {
+		const notes: string[] = [];
+		for (const path of paths) {
+			const absolute = resolve(path);
+			if (!isMarkdownNotePath(vaultPath, absolute)) continue;
+			const canonical = await promises.realpath(absolute);
+			if (!isMarkdownNotePath(vaultPath, canonical)) continue;
+			if ((await promises.stat(canonical)).isFile()) notes.push(path);
+		}
+		return notes;
 	}
 }

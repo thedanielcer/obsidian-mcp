@@ -44,6 +44,7 @@ describe("replaceNoteLines", () => {
 			logger,
 			restrictedPaths,
 			createRestrictedReaderEmails(),
+			vaultDir,
 		);
 		service = new VaultService(logger, vaultDir, restrictions);
 	});

@@ -36,3 +36,23 @@ export function toNotePath(root: string, path: string): string {
 	assertWithinVault(root, absolute);
 	return relative(root, absolute).split(sep).join("/");
 }
+
+/** Note tools never expose vault configuration, Git metadata, or other file types. */
+export function isMarkdownNotePath(root: string, path: string): boolean {
+	if (!isWithinVault(root, path)) return false;
+	const parts = toNotePath(root, path).split("/");
+	return (
+		path.endsWith(".md") &&
+		!parts.some((part) =>
+			[".obsidian", ".git"].includes(part.toLowerCase()),
+		)
+	);
+}
+
+export function assertMarkdownNotePath(root: string, path: string): void {
+	assertWithinVault(root, path);
+	if (!isMarkdownNotePath(root, path))
+		throw new Error(
+			"Note path must be a Markdown (.md) file outside internal directories",
+		);
+}
