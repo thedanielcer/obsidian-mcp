@@ -123,8 +123,6 @@ export class VaultService {
 		const notePath = join(parentPath, basename(requestedPath));
 		assertMarkdownNotePath(vaultPath, notePath);
 
-		this.validateAndFilterNote(notePath, identity);
-
 		try {
 			await writeFile(notePath, content, { flag: "wx" });
 		} catch (error) {
