@@ -58,7 +58,7 @@ export function loadConfig(env?: NodeJS.ProcessEnv): AppConfig {
 		policyAud: env.POLICY_AUD,
 		allowedHosts: env.ALLOWED_HOSTS,
 		vaultDir: env.VAULT_DIR,
-		restrictedNotesPaths: env.RESTRICTED_NOTES_JSON,
+		restrictedNotesJson: env.RESTRICTED_NOTES_JSON,
 		canReadRestrictedNotes: env.CAN_READ_RESTRICTED_NOTES,
 	});
 }
