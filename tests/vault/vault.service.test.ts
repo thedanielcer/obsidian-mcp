@@ -324,7 +324,7 @@ describe("VaultService", () => {
 			const content = "# Newly created note\n";
 
 			await expect(
-				service.createNote("new-note.md", content),
+				service.createNote("new-note.md", content, unauthorizedIdentity),
 			).resolves.toEqual({ ok: true });
 			await expect(readFile(notePath, "utf8")).resolves.toBe(content);
 		});

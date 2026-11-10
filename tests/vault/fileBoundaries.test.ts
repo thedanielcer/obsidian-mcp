@@ -40,7 +40,7 @@ it("rejects creation through an outside directory symlink without creating a fil
 	const outside = join(root, "outside");
 	await mkdir(outside);
 	await symlink(outside, join(vault, "link"), "junction");
-	await expect(service.createNote("link/new.md", "content")).rejects.toThrow(
+	await expect(service.createNote("link/new.md", "content", identity)).rejects.toThrow(
 		"inside the vault",
 	);
 	expect(await readdir(outside)).toEqual([]);
@@ -49,9 +49,9 @@ it("rejects creation through an outside directory symlink without creating a fil
 it("allows creation through a directory symlink whose target is an ordinary vault directory", async () => {
 	await mkdir(join(vault, "notes"));
 	await symlink(join(vault, "notes"), join(vault, "alias"), "junction");
-	await service.createNote("alias/new.md", "content");
+	await service.createNote("alias/new.md", "content", identity);
 	await expect(
-		service.createNote("alias/new.md", "overwrite"),
+		service.createNote("alias/new.md", "overwrite", identity),
 	).rejects.toThrow("already exists");
 	expect(await readFile(join(vault, "notes", "new.md"), "utf8")).toBe(
 		"content",
@@ -70,7 +70,7 @@ it.each([
 	await writeFile(nativePath, "original");
 	const hash = "a".repeat(64);
 	const calls = [
-		() => service.createNote(path, "new"),
+		() => service.createNote(path, "new", identity),
 		() => service.readNote(path, identity),
 		() => service.readNoteLines(path, 1, 1, identity),
 		() => service.getOutline(path, identity),
@@ -115,7 +115,7 @@ it("checks symlink targets for internal directories and non-Markdown files", asy
 	await expect(service.readNote("disguised.md", identity)).rejects.toThrow(
 		"Markdown",
 	);
-	await expect(service.createNote("alias/new.md", "new")).rejects.toThrow(
+	await expect(service.createNote("alias/new.md", "new", identity)).rejects.toThrow(
 		"Markdown",
 	);
 });

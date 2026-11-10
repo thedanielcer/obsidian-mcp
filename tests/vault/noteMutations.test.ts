@@ -55,7 +55,7 @@ describe("VaultService note mutations", () => {
 			const content = "# H\u00e9llo\n\nNew note \u{1f44b}\n";
 
 			await expect(
-				service.createNote("created.md", content),
+				service.createNote("created.md", content, unauthorizedIdentity),
 			).resolves.toEqual({ ok: true });
 			await expect(
 				readFile(join(vaultDir, "created.md"), "utf8"),
@@ -66,7 +66,11 @@ describe("VaultService note mutations", () => {
 			await mkdir(join(vaultDir, "folder"));
 
 			await expect(
-				service.createNote("folder/nested.md", "nested"),
+				service.createNote(
+					"folder/nested.md",
+					"nested",
+					unauthorizedIdentity,
+				),
 			).resolves.toEqual({ ok: true });
 			await expect(
 				readFile(join(vaultDir, "folder", "nested.md"), "utf8"),
@@ -78,14 +82,22 @@ describe("VaultService note mutations", () => {
 			await writeFile(notePath, "original");
 
 			await expect(
-				service.createNote("existing.md", "replacement"),
+				service.createNote(
+					"existing.md",
+					"replacement",
+					unauthorizedIdentity,
+				),
 			).rejects.toThrow("That note already exists");
 			await expect(readFile(notePath, "utf8")).resolves.toBe("original");
 		});
 
 		it("rejects creation when the parent directory does not exist", async () => {
 			await expect(
-				service.createNote("missing/folder/note.md", "content"),
+				service.createNote(
+					"missing/folder/note.md",
+					"content",
+					unauthorizedIdentity,
+				),
 			).rejects.toMatchObject({ code: "ENOENT" });
 		});
 
@@ -93,7 +105,11 @@ describe("VaultService note mutations", () => {
 			const outsidePath = join(testDir, "outside.md");
 
 			await expect(
-				service.createNote("../outside.md", "must not be created"),
+				service.createNote(
+					"../outside.md",
+					"must not be created",
+					unauthorizedIdentity,
+				),
 			).rejects.toThrow("Note path must be inside the vault");
 			await expect(access(outsidePath)).rejects.toMatchObject({
 				code: "ENOENT",

@@ -83,7 +83,7 @@ it("normalizes backslashes, mixed separators, and dot segments for reads and wri
 		read.version,
 		identity,
 	);
-	await service.createNote("Folder with spaces\\new.md", "new");
+	await service.createNote("Folder with spaces\\new.md", "new", identity);
 	expect(
 		(await service.readNote("Folder with spaces/new.md", identity)).content,
 	).toBe("new");

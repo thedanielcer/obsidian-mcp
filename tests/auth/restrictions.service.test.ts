@@ -54,6 +54,7 @@ describe("RestrictionsService", () => {
 	describe("isRestricted", () => {
 		it.each([
 			["a YAML boolean", "restricted: true"],
+			["a double-quoted property name", '"restricted": true'],
 			["a double-quoted string", 'restricted: "true"'],
 			["a single-quoted string", "restricted: 'true'"],
 			["uppercase text", "RESTRICTED: TRUE"],
@@ -81,6 +82,7 @@ describe("RestrictionsService", () => {
 			["yes", "restricted: yes"],
 			["an empty value", "restricted:"],
 			["a similar property name", "unrestricted: true"],
+			["a mismatched quoted property name", '"restricted: true'],
 			["extra text after true", "restricted: true-ish"],
 			["true inside an array", "restricted: [true]"],
 		])(
@@ -131,6 +133,16 @@ describe("RestrictionsService", () => {
 
 			await expect(service.isRestricted(notePath)).resolves.toBe(true);
 		});
+
+		it.each(["\n", "\r\n"])(
+			"supports a UTF-8 BOM before frontmatter with %j line endings",
+			async (lineEnding) => {
+				const notePath = await createNote(
+					`\uFEFF${["---", '"restricted": true', "---"].join(lineEnding)}`,
+				);
+				await expect(service.isRestricted(notePath)).resolves.toBe(true);
+			},
+		);
 
 		it("finds the property when frontmatter spans multiple stream chunks", async () => {
 			const padding = `description: ${"x".repeat(6 * 1024)}`;
