@@ -393,6 +393,7 @@ export class VaultService {
 		let lineNumber = 0;
 		let i = 0;
 		let isInCodeBlock = false;
+		let headingRegex = /^(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/;
 
 		let array: Outline[][] = [];
 
@@ -495,6 +496,7 @@ export class VaultService {
 							lineNumber: lineNumber,
 							outline: [],
 						});
+						break;
 					case HeadingLevels.sixthLevel:
 						lastMatchLevel = HeadingLevels.sixthLevel;
 						if (!array[HeadingLevels.sixthLevel])
@@ -537,29 +539,31 @@ export class VaultService {
 				"Processing outline stream chunk",
 			);
 
+			let openingFenceLength = 0;
 			for (const line of lines) {
 				lineNumber += 1;
 				this.logger.debug({ line }, "Line");
-				const codeBlockMatch = /^[ \t]{0,3}`{3,}[^\r\n]*$/.exec(line);
-				if (isInCodeBlock && !codeBlockMatch) {
-					this.logger.debug("WE'RE IN A CODEBLOCK");
-					continue;
-				} else if (codeBlockMatch && !isInCodeBlock) {
-					this.logger.debug(
-						{ codeBlockMatch, isInCodeBlock },
-						"ENTERING CODE BLOCK",
-					);
-					isInCodeBlock = true;
-					continue;
-				} else if (codeBlockMatch && isInCodeBlock) {
-					this.logger.debug(
-						{ codeBlockMatch, isInCodeBlock },
-						"EXITING CODE BLOCK",
-					);
-					isInCodeBlock = false;
+
+				if (isInCodeBlock) {
+					const closingFence = /^ {0,3}(`{3,})[ \t]*$/.exec(line);
+					if (
+						closingFence &&
+						closingFence[1] &&
+						closingFence[1].length >= openingFenceLength
+					)
+						isInCodeBlock = false;
 					continue;
 				}
-				const match = /^(#{1,6})[ \t]+(.+?)\s*$/.exec(line);
+
+				const openingFence = /^ {0,3}(`{3,})([^`]*)$/.exec(line);
+
+				if (openingFence && openingFence[1]) {
+					openingFenceLength = openingFence[1].length;
+					isInCodeBlock = true;
+					continue;
+				}
+
+				const match = headingRegex.exec(line);
 				outlineFunciton(match);
 
 				i++;
@@ -569,7 +573,7 @@ export class VaultService {
 		this.logger.debug({ remainder }, "Remainder");
 
 		lineNumber += 1;
-		const finalLineMatch = /^(#{1,6})[ \t]+(.+?)\s*$/.exec(remainder);
+		const finalLineMatch = headingRegex.exec(remainder);
 		this.logger.debug({ finalLineMatch }, "Final line match");
 		outlineFunciton(finalLineMatch);
 		const node = this.makeNode(array);
@@ -982,26 +986,26 @@ export class VaultService {
 					reversedArray.sort(
 						(a, b) => (a === null ? 1 : 0) - (b === null ? 1 : 0),
 					);
-					let current = outlines[i];
+					let current = outlines;
 					if (!current) {
-						current = outlines.at(-1);
+						current = outlines;
 						if (!current) return;
 					}
 
 					const newParent = reversedArray[i + 1]?.at(-1);
 					if (!newParent) return reversedArray.reverse();
 
-					newParent.outline.push(current);
+					newParent.outline.push(...current);
 					reversedArray[i] = [];
 					continue;
 				}
 				return reversedArray.reverse();
 			}
 
-			const current = outlines.at(-1);
+			const current = outlines;
 			if (!current) return;
 
-			parent.outline.push(current);
+			parent.outline.push(...current);
 			reversedArray[i] = [];
 		}
 	}

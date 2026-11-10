@@ -660,9 +660,11 @@ describe("VaultService", () => {
 					"```",
 					"# Parent",
 					"Some body text",
-					"## Child",
+					"## Child ###",
 					"### Grandchild",
 					"## Second child",
+					"### Grandchild to second child",
+					"## Third child",
 					"# Second parent",
 					"## Child to second parent",
 					"### Grandchild to child of second parent",
@@ -705,32 +707,43 @@ describe("VaultService", () => {
 							{
 								name: "Second child",
 								lineNumber: 9,
+								outline: [
+									{
+										name: "Grandchild to second child",
+										lineNumber: 10,
+										outline: [],
+									},
+								],
+							},
+							{
+								name: "Third child",
+								lineNumber: 11,
 								outline: [],
 							},
 						],
 					},
 					{
 						name: "Second parent",
-						lineNumber: 10,
+						lineNumber: 12,
 						outline: [
 							{
 								name: "Child to second parent",
-								lineNumber: 11,
+								lineNumber: 13,
 								outline: [
 									{
 										name: "Grandchild to child of second parent",
-										lineNumber: 12,
+										lineNumber: 14,
 										outline: [],
 									},
 								],
 							},
 							{
 								name: "Second child to second parent",
-								lineNumber: 13,
+								lineNumber: 15,
 								outline: [
 									{
 										name: "Grandchild to second child of second parent",
-										lineNumber: 14,
+										lineNumber: 16,
 										outline: [],
 									},
 								],
@@ -739,15 +752,15 @@ describe("VaultService", () => {
 					},
 					{
 						name: "Third parent",
-						lineNumber: 15,
+						lineNumber: 17,
 						outline: [
 							{
 								name: "Child to third parent",
-								lineNumber: 16,
+								lineNumber: 18,
 								outline: [
 									{
 										name: "Grandchild to child to third parent",
-										lineNumber: 21,
+										lineNumber: 23,
 										outline: [],
 									},
 								],
