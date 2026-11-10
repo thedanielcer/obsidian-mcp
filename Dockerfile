@@ -15,6 +15,11 @@ RUN npm run build && npm prune --omit=dev
 # Assemble the image that will run on Ubuntu.
 FROM node:26.13.0-bookworm-slim AS runtime
 
+# Install the executable used by the vault search tools.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ripgrep \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 ENV NODE_ENV=production
