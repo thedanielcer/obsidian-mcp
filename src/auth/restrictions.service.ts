@@ -46,13 +46,15 @@ export class RestrictionsService {
 		let remainder = "";
 		let isInsideProperties = false;
 		const hasRestrictedProperty =
-			/^[ \t]*restricted[ \t]*:[ \t]*(?:true|"true"|'true')[ \t]*(?:#.*)?$/i;
+			/^[ \t]*(?:restricted|"restricted")[ \t]*:[ \t]*(?:true|"true"|'true')[ \t]*(?:#.*)?$/i;
 		let i = 0;
 		for await (const chunk of stream) {
 			const text = remainder + chunk;
 			const lines = text.split(/\r?\n/);
 
 			remainder = lines.pop() ?? "";
+			if (i === 0 && lines[0] !== undefined)
+				lines[0] = lines[0].replace(/^\uFEFF/, "");
 			if (lines[0] !== "---" && i === 0 && !isInsideProperties)
 				return false;
 

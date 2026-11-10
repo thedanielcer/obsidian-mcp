@@ -113,6 +113,7 @@ export class VaultService {
 	public async createNote(
 		path: string,
 		content: string,
+		identity: CallerIdentity,
 	): Promise<{ ok: true }> {
 		const vaultPath = await promises.realpath(this.vaultDir);
 
@@ -121,6 +122,8 @@ export class VaultService {
 		const parentPath = await promises.realpath(dirname(requestedPath));
 		const notePath = join(parentPath, basename(requestedPath));
 		assertMarkdownNotePath(vaultPath, notePath);
+
+		this.validateAndFilterNote(notePath, identity);
 
 		try {
 			await writeFile(notePath, content, { flag: "wx" });
@@ -394,6 +397,7 @@ export class VaultService {
 		let i = 0;
 		let isInCodeBlock = false;
 		let headingRegex = /^(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/;
+		let openingFenceLength = 0;
 
 		let array: Outline[][] = [];
 
@@ -539,7 +543,6 @@ export class VaultService {
 				"Processing outline stream chunk",
 			);
 
-			let openingFenceLength = 0;
 			for (const line of lines) {
 				lineNumber += 1;
 				this.logger.debug({ line }, "Line");

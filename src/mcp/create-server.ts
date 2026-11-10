@@ -21,7 +21,7 @@ export function createMcpServer(
 	const server = new McpServer({ name: "Obsidian MCP", version: "1.0.0" });
 
 	registerGreetTool(server, identity);
-	registerCreateNoteTool(server, vaultService);
+	registerCreateNoteTool(server, vaultService, identity);
 	registerGetNotesTool(server, vaultService, identity);
 	registerGetNotePathByNoteNameTool(server, vaultService, identity);
 	registerReadNoteTool(server, vaultService, identity);

@@ -1,10 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
 import type { VaultService } from "../../vault/vault.service.ts";
+import type { CallerIdentity } from "../../auth/caller-identity.ts";
 
 export function registerCreateNoteTool(
 	server: McpServer,
 	vaultService: VaultService,
+	identity: CallerIdentity,
 ) {
 	server.registerTool(
 		"createNote",
@@ -26,7 +28,11 @@ export function registerCreateNoteTool(
 			}),
 		},
 		async ({ path, content }) => {
-			const result = await vaultService.createNote(path, content);
+			const result = await vaultService.createNote(
+				path,
+				content,
+				identity,
+			);
 			return {
 				content: [{ type: "text", text: JSON.stringify(result) }],
 			};
