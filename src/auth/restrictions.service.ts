@@ -75,6 +75,7 @@ export class RestrictionsService {
 	public async filterRestrictedNotes(
 		notePaths: string[],
 		identity: CallerIdentity,
+		isCreation?: boolean,
 	): Promise<string[]> {
 		if (this.canReadRestrictedNotes.has(identity.email)) return notePaths;
 		const schema = z.array(z.string().min(1));
@@ -107,7 +108,10 @@ export class RestrictionsService {
 		const allowed: string[] = [];
 		for (const path of notePaths) {
 			const absolute = resolve(path);
-			const canonical = await realpath(absolute);
+			const canonical = isCreation
+				? await realpath(dirname(absolute))
+				: await realpath(absolute);
+
 			if (!isWithinVault(vaultPath, canonical)) continue;
 			// Check both the discovered path and its target so aliases cannot bypass a restriction.
 			if (
@@ -118,6 +122,12 @@ export class RestrictionsService {
 				)
 			)
 				continue;
+
+			if (isCreation) {
+				allowed.push(path);
+				continue;
+			}
+
 			if (!(await this.isRestricted(canonical))) allowed.push(path);
 		}
 		return allowed;

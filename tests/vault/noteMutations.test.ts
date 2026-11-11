@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pino from "pino";
+import pretty from "pino-pretty";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RestrictionsService } from "../../src/auth/restrictions.service.ts";
 import { VaultService } from "../../src/vault/vault.service.ts";
@@ -33,7 +34,19 @@ describe("VaultService note mutations", () => {
 		await mkdir(vaultDir);
 		const restrictedPaths = join(testDir, "restrictions.json");
 		await writeFile(restrictedPaths, "[]");
-		const logger = pino({ level: "silent" });
+		const logLevel = process.env.TEST_LOG_LEVEL ?? "silent";
+		const logger =
+			logLevel === "silent"
+				? pino({ level: "silent" })
+				: pino(
+						{ level: logLevel },
+						pretty({
+							colorize: true,
+							translateTime: "SYS:standard",
+							ignore: "pid,hostname",
+							sync: true,
+						}),
+					);
 		service = new VaultService(
 			logger,
 			vaultDir,

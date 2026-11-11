@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+	access,
 	mkdtemp,
 	mkdir,
 	readFile,
@@ -186,4 +187,48 @@ it("blocks a path beneath a restricted directory even when its symlink target is
 		(await service(vault).readNote("Private-Archive/note.md", reader))
 			.content,
 	).toBe("needle public\n");
+});
+
+it("blocks creation in restricted directories while allowing authorized and public creation", async () => {
+	await writeFile(json, JSON.stringify(["Private"]));
+	const svc = service(vault);
+	await expect(
+		svc.createNote("Private/Nested/blocked.md", "secret", reader),
+	).rejects.toThrow("restricted");
+	await expect(
+		access(join(vault, "Private", "Nested", "blocked.md")),
+	).rejects.toMatchObject({ code: "ENOENT" });
+	await expect(
+		svc.createNote("Private-Archive/public.md", "public", reader),
+	).resolves.toEqual({ ok: true });
+	await expect(
+		svc.createNote(
+			"Private/Nested/authorized.md",
+			"secret",
+			authorizedIdentity,
+		),
+	).resolves.toEqual({ ok: true });
+});
+
+it("blocks creation through aliases into restricted directories and beneath restricted aliases", async () => {
+	await symlink(join(vault, "Private"), join(vault, "Alias"), "junction");
+	await symlink(
+		join(vault, "Private-Archive"),
+		join(vault, "Private", "PublicAlias"),
+		"junction",
+	);
+	await writeFile(json, JSON.stringify(["Private"]));
+	const svc = service(vault);
+	await expect(
+		svc.createNote("Alias/Nested/blocked.md", "secret", reader),
+	).rejects.toThrow("restricted");
+	await expect(
+		svc.createNote("Private/PublicAlias/blocked.md", "secret", reader),
+	).rejects.toThrow("restricted");
+	await expect(
+		access(join(vault, "Private", "Nested", "blocked.md")),
+	).rejects.toMatchObject({ code: "ENOENT" });
+	await expect(
+		access(join(vault, "Private-Archive", "blocked.md")),
+	).rejects.toMatchObject({ code: "ENOENT" });
 });

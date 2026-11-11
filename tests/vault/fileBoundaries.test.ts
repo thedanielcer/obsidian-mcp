@@ -99,7 +99,7 @@ it("excludes internal Markdown files before discovery pagination", async () => {
 	).toEqual([{ path: "note.md", line: 1, text: "needle public\n" }]);
 });
 
-it("checks symlink targets for internal directories and non-Markdown files", async () => {
+it.skipIf(process.platform === "win32")("checks symlink targets for internal directories and non-Markdown files", async () => {
 	await mkdir(join(vault, ".obsidian"));
 	await writeFile(join(vault, ".obsidian", "hidden.md"), "private");
 	await writeFile(join(vault, "settings.json"), "private");

@@ -115,13 +115,7 @@ export class VaultService {
 		content: string,
 		identity: CallerIdentity,
 	): Promise<{ ok: true }> {
-		const vaultPath = await promises.realpath(this.vaultDir);
-
-		const requestedPath = resolveNotePath(vaultPath, path);
-		assertMarkdownNotePath(vaultPath, requestedPath);
-		const parentPath = await promises.realpath(dirname(requestedPath));
-		const notePath = join(parentPath, basename(requestedPath));
-		assertMarkdownNotePath(vaultPath, notePath);
+		const notePath = await this.validateAndFilterNote(path, identity, true);
 
 		try {
 			await writeFile(notePath, content, { flag: "wx" });
@@ -1014,20 +1008,31 @@ export class VaultService {
 	private async validateAndFilterNote(
 		path: string,
 		identity: CallerIdentity,
+		isCreation?: boolean,
 	): Promise<string> {
 		const vaultPath = await promises.realpath(this.vaultDir);
 
 		const requestedPath = resolveNotePath(vaultPath, path);
 		assertMarkdownNotePath(vaultPath, requestedPath);
-		const notePath = await promises.realpath(requestedPath);
+
+		const parentPath = isCreation
+			? await promises.realpath(dirname(requestedPath))
+			: undefined;
+
+		const notePath = parentPath
+			? join(parentPath, basename(requestedPath))
+			: await promises.realpath(requestedPath);
+
 		assertMarkdownNotePath(vaultPath, notePath);
-		if (!(await promises.stat(notePath)).isFile())
-			throw new Error("Note path must be a regular file");
+		if (!isCreation)
+			if (!(await promises.stat(notePath)).isFile())
+				throw new Error("Note path must be a regular file");
 
 		const validNotePath =
 			await this.restrictionsService.filterRestrictedNotes(
 				[requestedPath],
 				identity,
+				isCreation,
 			);
 
 		if (validNotePath.length === 0) {
