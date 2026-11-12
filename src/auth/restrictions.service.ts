@@ -46,7 +46,7 @@ export class RestrictionsService {
 		let remainder = "";
 		let isInsideProperties = false;
 		const hasRestrictedProperty =
-			/^[ \t]*(?:restricted|"restricted")[ \t]*:[ \t]*(?:true|"true"|'true')[ \t]*(?:#.*)?$/i;
+			/^[ \t]*(?:restricted|"restricted"|'restricted')[ \t]*:[ \t]*(?:true|"true"|'true')[ \t]*(?:#.*)?$/i;
 		let i = 0;
 		for await (const chunk of stream) {
 			const text = remainder + chunk;

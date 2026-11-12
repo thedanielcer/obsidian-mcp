@@ -55,6 +55,7 @@ describe("RestrictionsService", () => {
 		it.each([
 			["a YAML boolean", "restricted: true"],
 			["a double-quoted property name", '"restricted": true'],
+			["a single-quoted property name", "'restricted': true"],
 			["a double-quoted string", 'restricted: "true"'],
 			["a single-quoted string", "restricted: 'true'"],
 			["uppercase text", "RESTRICTED: TRUE"],
@@ -140,7 +141,9 @@ describe("RestrictionsService", () => {
 				const notePath = await createNote(
 					`\uFEFF${["---", '"restricted": true', "---"].join(lineEnding)}`,
 				);
-				await expect(service.isRestricted(notePath)).resolves.toBe(true);
+				await expect(service.isRestricted(notePath)).resolves.toBe(
+					true,
+				);
 			},
 		);
 
