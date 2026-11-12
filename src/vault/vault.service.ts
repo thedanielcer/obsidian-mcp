@@ -19,16 +19,6 @@ import {
 	resolveNotePath,
 	toNotePath,
 } from "./vault-paths.ts";
-
-enum HeadingLevels {
-	firstLevel,
-	secondLevel,
-	thirdLevel,
-	fourthLevel,
-	fifthLevel,
-	sixthLevel,
-}
-
 export type Outline = {
 	name: string;
 	lineNumber: number;
@@ -383,32 +373,38 @@ export class VaultService {
 			outline: [],
 		};
 
-		let remainder = "";
-		let lastMatchLevel = 0;
-		let lineNumber = 0;
-		let i = 0;
-		let isInCodeBlock = false;
-		let headingRegex = /^(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/;
-		let openingFenceLength = 0;
+		let remainder: string = "";
+		let lastMatchLevel: number = 0;
+		let lowestLevel: number;
+		let lineNumber: number = 0;
+		let isInCodeBlock: boolean = false;
+		let headingRegex: RegExp = /^(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/;
+		let openingFenceLength: number = 0;
+		let seenLevelOne: boolean = false;
 
 		let array: Outline[][] = [];
 
 		const outlineFunciton = (match: RegExpExecArray | null) => {
 			if (match && match[2] && match[1]) {
-				const currentMatchLevel = match[1].length - 1;
-				const previousMatchLevel = lastMatchLevel;
-				if (i === 0) lastMatchLevel = 0;
+				if (match[1].length - 1 === 0 && !seenLevelOne)
+					seenLevelOne = true;
+
+				if (
+					match[1].length - 1 < lowestLevel ||
+					lowestLevel === undefined
+				)
+					lowestLevel = match[1].length - 1;
+
+				const currentMatchLevel = seenLevelOne
+					? match[1].length - 1
+					: match[1].length - 1 - lowestLevel;
 
 				this.logger.debug(
 					{
 						lineNumber,
 						headingText: match[2],
 						headingLevel: currentMatchLevel + 1,
-						previousHeadingLevel: previousMatchLevel + 1,
 						effectivePreviousHeadingLevel: lastMatchLevel + 1,
-						levelInitialized: Array.isArray(
-							array[currentMatchLevel],
-						),
 					},
 					"Matched outline heading",
 				);
@@ -442,69 +438,16 @@ export class VaultService {
 						);
 					}
 				}
-				switch (currentMatchLevel) {
-					case HeadingLevels.firstLevel:
-						lastMatchLevel = HeadingLevels.firstLevel;
-						if (!array[HeadingLevels.firstLevel])
-							array[HeadingLevels.firstLevel] = [];
-						array[HeadingLevels.firstLevel].push({
-							name: match[2],
-							lineNumber: lineNumber,
-							outline: [],
-						});
-						break;
-					case HeadingLevels.secondLevel:
-						lastMatchLevel = HeadingLevels.secondLevel;
-						if (!array[HeadingLevels.secondLevel])
-							array[HeadingLevels.secondLevel] = [];
-						array[HeadingLevels.secondLevel].push({
-							name: match[2],
-							lineNumber: lineNumber,
-							outline: [],
-						});
-						break;
-					case HeadingLevels.thirdLevel:
-						lastMatchLevel = HeadingLevels.thirdLevel;
-						if (!array[HeadingLevels.thirdLevel])
-							array[HeadingLevels.thirdLevel] = [];
-						array[HeadingLevels.thirdLevel].push({
-							name: match[2],
-							lineNumber: lineNumber,
-							outline: [],
-						});
-						break;
-					case HeadingLevels.fourthLevel:
-						lastMatchLevel = HeadingLevels.fourthLevel;
-						if (!array[HeadingLevels.fourthLevel])
-							array[HeadingLevels.fourthLevel] = [];
-						array[HeadingLevels.fourthLevel].push({
-							name: match[2],
-							lineNumber: lineNumber,
-							outline: [],
-						});
-						break;
-					case HeadingLevels.fifthLevel:
-						lastMatchLevel = HeadingLevels.fifthLevel;
-						if (!array[HeadingLevels.fifthLevel])
-							array[HeadingLevels.fifthLevel] = [];
-						array[HeadingLevels.fifthLevel].push({
-							name: match[2],
-							lineNumber: lineNumber,
-							outline: [],
-						});
-						break;
-					case HeadingLevels.sixthLevel:
-						lastMatchLevel = HeadingLevels.sixthLevel;
-						if (!array[HeadingLevels.sixthLevel])
-							array[HeadingLevels.sixthLevel] = [];
-						array[HeadingLevels.sixthLevel].push({
-							name: match[2],
-							lineNumber: lineNumber,
-							outline: [],
-						});
-						break;
-					default:
-						break;
+
+				if (0 <= currentMatchLevel && currentMatchLevel <= 5) {
+					lastMatchLevel = currentMatchLevel;
+					if (!array[currentMatchLevel])
+						array[currentMatchLevel] = [];
+					array[currentMatchLevel].push({
+						name: match[2],
+						lineNumber: lineNumber,
+						outline: [],
+					});
 				}
 
 				this.logger.debug(
@@ -560,8 +503,6 @@ export class VaultService {
 
 				const match = headingRegex.exec(line);
 				outlineFunciton(match);
-
-				i++;
 			}
 		}
 

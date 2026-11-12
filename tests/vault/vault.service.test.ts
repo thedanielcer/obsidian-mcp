@@ -324,7 +324,11 @@ describe("VaultService", () => {
 			const content = "# Newly created note\n";
 
 			await expect(
-				service.createNote("new-note.md", content, unauthorizedIdentity),
+				service.createNote(
+					"new-note.md",
+					content,
+					unauthorizedIdentity,
+				),
 			).resolves.toEqual({ ok: true });
 			await expect(readFile(notePath, "utf8")).resolves.toBe(content);
 		});
@@ -803,6 +807,42 @@ describe("VaultService", () => {
 						outline: [
 							{ name: "Its child", lineNumber: 4, outline: [] },
 						],
+					},
+				],
+			});
+		});
+
+		it("keeps earlier second-level headings as siblings when a first-level heading appears later", async () => {
+			const notePath = join(vaultDir, "late-first-level-heading.md");
+			await writeFile(
+				notePath,
+				["## 1", "### 1.1", "## 2", "### 2.1", "# 3", "## 3.1"].join(
+					"\n",
+				),
+			);
+
+			await expect(
+				service.getOutline(
+					"late-first-level-heading.md",
+					unauthorizedIdentity,
+				),
+			).resolves.toEqual({
+				notePath: relative(vaultDir, notePath).split(sep).join("/"),
+				outline: [
+					{
+						name: "1",
+						lineNumber: 1,
+						outline: [{ name: "1.1", lineNumber: 2, outline: [] }],
+					},
+					{
+						name: "2",
+						lineNumber: 3,
+						outline: [{ name: "2.1", lineNumber: 4, outline: [] }],
+					},
+					{
+						name: "3",
+						lineNumber: 5,
+						outline: [{ name: "3.1", lineNumber: 6, outline: [] }],
 					},
 				],
 			});
