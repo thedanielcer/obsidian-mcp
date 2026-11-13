@@ -874,6 +874,25 @@ describe("VaultService", () => {
 
 		it.each([
 			{
+				name: "keeps an H4 under its H2 parent when the final branch skips H3",
+				markdown: "# A\n## B\n#### C\n",
+				outline: [
+					{
+						name: "A",
+						lineNumber: 1,
+						outline: [
+							{
+								name: "B",
+								lineNumber: 2,
+								outline: [
+									{ name: "C", lineNumber: 3, outline: [] },
+								],
+							},
+						],
+					},
+				],
+			},
+			{
 				name: "keeps an H2 under the H1 after a skipped H3",
 				markdown: "# A\n### B\n## C\n### D",
 				outline: [
