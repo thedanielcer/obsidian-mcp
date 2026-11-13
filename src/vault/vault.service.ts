@@ -420,10 +420,6 @@ export class VaultService {
 
 					const node = this.makeNode(array);
 					if (node) {
-						node.sort(
-							(a, b) =>
-								(a === null ? 1 : 0) - (b === null ? 1 : 0),
-						);
 						array = node;
 
 						this.logger.debug(
@@ -507,15 +503,14 @@ export class VaultService {
 		this.logger.debug({ remainder }, "Remainder");
 
 		lineNumber += 1;
+
 		const finalLineMatch = headingRegex.exec(remainder);
 
 		!isInCodeBlock && outlineFunciton(finalLineMatch);
 
-		array = array.filter((outline) => outline);
-
 		const node = this.makeNode(array);
 		if (node) {
-			array = node.filter((outline) => outline);
+			array = node;
 
 			this.logger.debug(
 				{
@@ -533,8 +528,6 @@ export class VaultService {
 			},
 			"Finished reading note for outline",
 		);
-
-		array.sort((a, b) => (a === null ? 1 : 0) - (b === null ? 1 : 0));
 
 		if (array[0]) finalOutline.outline = array[0];
 
