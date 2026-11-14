@@ -418,7 +418,11 @@ export class VaultService {
 						"Making node",
 					);
 
-					const node = this.makeNode(array);
+					const node = this.makeNode(
+						array.filter(
+							(element) => element && element.length !== 0,
+						),
+					);
 					if (node) {
 						array = node;
 
@@ -508,7 +512,9 @@ export class VaultService {
 
 		!isInCodeBlock && outlineFunciton(finalLineMatch);
 
-		const node = this.makeNode(array);
+		const node = this.makeNode(
+			array.filter((element) => element && element.length !== 0),
+		);
 		if (node) {
 			array = node;
 
@@ -549,7 +555,7 @@ export class VaultService {
 			array.shift();
 		}
 
-		let reversedArray = [...array].reverse();
+		const reversedArray = [...array].reverse();
 
 		for (const [i, outlines] of reversedArray.entries()) {
 			if (!outlines) continue;
@@ -557,28 +563,19 @@ export class VaultService {
 			const parent = reversedArray[i + 1]?.at(-1);
 			if (!parent) {
 				if (i !== reversedArray.length - 1) {
-					reversedArray = reversedArray.filter(
-						(element) => element && element.length !== 0,
-					);
-					let current = outlines;
-					if (!current) {
-						current = outlines;
-						if (!current) return;
-					}
+					const current = outlines;
+					if (!current) return;
 
 					const newParent = reversedArray[i + 1]?.at(-1);
 					if (!newParent) {
-						this.logger.debug({ array: reversedArray.reverse() });
-						return reversedArray;
+						return reversedArray.reverse();
 					}
 
 					newParent.outline.push(...current);
 					reversedArray[i] = [];
 					continue;
 				}
-				return reversedArray
-					.reverse()
-					.filter((element) => element && element.length !== 0);
+				return reversedArray.reverse();
 			}
 
 			const current = outlines;
