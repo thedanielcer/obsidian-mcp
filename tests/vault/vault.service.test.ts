@@ -893,6 +893,26 @@ describe("VaultService", () => {
 				],
 			},
 			{
+				name: "keeps the H2 parent when returning from H4 to H3",
+				markdown: "# A\n## B\n#### C\n### D\n",
+				outline: [
+					{
+						name: "A",
+						lineNumber: 1,
+						outline: [
+							{
+								name: "B",
+								lineNumber: 2,
+								outline: [
+									{ name: "C", lineNumber: 3, outline: [] },
+									{ name: "D", lineNumber: 4, outline: [] },
+								],
+							},
+						],
+					},
+				],
+			},
+			{
 				name: "keeps an H2 under the H1 after a skipped H3",
 				markdown: "# A\n### B\n## C\n### D",
 				outline: [
@@ -1037,6 +1057,36 @@ describe("VaultService", () => {
 				notePath: relative(vaultDir, notePath).split(sep).join("/"),
 				outline: [
 					{ name: "Final heading", lineNumber: 2, outline: [] },
+				],
+			});
+		});
+
+		it("returns an empty title for a final H1 with closing hashes", async () => {
+			const notePath = "empty-final-heading.md";
+			await writeFile(join(vaultDir, notePath), "# ###");
+
+			await expect(
+				service.getOutline(notePath, unauthorizedIdentity),
+			).resolves.toEqual({
+				notePath,
+				outline: [{ name: "", lineNumber: 1, outline: [] }],
+			});
+		});
+
+		it("keeps a child under an empty H1 with closing hashes", async () => {
+			const notePath = "empty-parent-heading.md";
+			await writeFile(join(vaultDir, notePath), "# ###\n## Child\n");
+
+			await expect(
+				service.getOutline(notePath, unauthorizedIdentity),
+			).resolves.toEqual({
+				notePath,
+				outline: [
+					{
+						name: "",
+						lineNumber: 1,
+						outline: [{ name: "Child", lineNumber: 2, outline: [] }],
+					},
 				],
 			});
 		});
