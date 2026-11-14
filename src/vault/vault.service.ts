@@ -364,7 +364,6 @@ export class VaultService {
 			highWaterMark: 10 * 1024,
 		});
 
-		const outline: Outline[] = [];
 		const finalOutline: GetOutlineResult = {
 			notePath: toNotePath(
 				await promises.realpath(this.vaultDir),
@@ -419,18 +418,17 @@ export class VaultService {
 						"Making node",
 					);
 
-					const node = this.makeNode(array);
+					const node = this.makeNode(
+						array.filter(
+							(element) => element && element.length !== 0,
+						),
+					);
 					if (node) {
 						array = node;
 
 						this.logger.debug(
 							{
 								nodeCreated: node !== undefined,
-								// nodeHeading: node?.name,
-								topLevelOutlineCount: outline.length,
-								topLevelHeadings: outline.map(
-									(heading) => heading.name,
-								),
 								node,
 								array,
 							},
@@ -509,17 +507,19 @@ export class VaultService {
 		this.logger.debug({ remainder }, "Remainder");
 
 		lineNumber += 1;
+
 		const finalLineMatch = headingRegex.exec(remainder);
-		this.logger.debug({ finalLineMatch }, "Final line match");
-		outlineFunciton(finalLineMatch);
-		const node = this.makeNode(array);
+
+		!isInCodeBlock && outlineFunciton(finalLineMatch);
+
+		const node = this.makeNode(
+			array.filter((element) => element && element.length !== 0),
+		);
 		if (node) {
 			array = node;
 
 			this.logger.debug(
 				{
-					topLevelOutlineCount: outline.length,
-					topLevelHeadings: outline.map((heading) => heading.name),
 					node,
 					array,
 				},
@@ -529,18 +529,11 @@ export class VaultService {
 
 		this.logger.debug(
 			{
-				processedLineCount: lineNumber,
-				remainderLength: remainder.length,
-				finalLineIsHeading: finalLineMatch !== null,
-				finalLineHeadingText: finalLineMatch?.[2],
-				finalLineHeadingLevel: finalLineMatch?.[1]?.length,
-				topLevelOutlineCount: outline.length,
-				topLevelHeadings: outline.map((heading) => heading.name),
+				node,
+				array,
 			},
 			"Finished reading note for outline",
 		);
-
-		array.sort((a, b) => (a === null ? 1 : 0) - (b === null ? 1 : 0));
 
 		if (array[0]) finalOutline.outline = array[0];
 
@@ -550,13 +543,47 @@ export class VaultService {
 				returnedHeadings: finalOutline.outline.map(
 					(heading) => heading.name,
 				),
-				accumulatedOutlineCount: outline.length,
-				accumulatedHeadings: outline.map((heading) => heading.name),
 				finalOutline,
 			},
 			"Finished building note outline",
 		);
 		return finalOutline;
+	}
+
+	private makeNode(array: Outline[][]): Outline[][] | undefined {
+		if (!array[0]) {
+			array.shift();
+		}
+
+		const reversedArray = [...array].reverse();
+
+		for (const [i, outlines] of reversedArray.entries()) {
+			if (!outlines) continue;
+
+			const parent = reversedArray[i + 1]?.at(-1);
+			if (!parent) {
+				if (i !== reversedArray.length - 1) {
+					const current = outlines;
+					if (!current) return;
+
+					const newParent = reversedArray[i + 1]?.at(-1);
+					if (!newParent) {
+						return reversedArray.reverse();
+					}
+
+					newParent.outline.push(...current);
+					reversedArray[i] = [];
+					continue;
+				}
+				return reversedArray.reverse();
+			}
+
+			const current = outlines;
+			if (!current) return;
+
+			parent.outline.push(...current);
+			reversedArray[i] = [];
+		}
 	}
 
 	public async searchNotes(
@@ -903,46 +930,6 @@ export class VaultService {
 			throw new RangeError(
 				"skip must be a non-negative safe integer, limit must be a positive safe integer, and skip + limit must be a safe integer",
 			);
-		}
-	}
-
-	private makeNode(array: Outline[][]): Outline[][] | undefined {
-		if (!array[0]) {
-			array.shift();
-		}
-
-		const reversedArray = [...array].reverse();
-
-		for (const [i, outlines] of reversedArray.entries()) {
-			if (outlines.length === 0) continue;
-
-			const parent = reversedArray[i + 1]?.at(-1);
-			if (!parent) {
-				if (i !== reversedArray.length) {
-					reversedArray.sort(
-						(a, b) => (a === null ? 1 : 0) - (b === null ? 1 : 0),
-					);
-					let current = outlines;
-					if (!current) {
-						current = outlines;
-						if (!current) return;
-					}
-
-					const newParent = reversedArray[i + 1]?.at(-1);
-					if (!newParent) return reversedArray.reverse();
-
-					newParent.outline.push(...current);
-					reversedArray[i] = [];
-					continue;
-				}
-				return reversedArray.reverse();
-			}
-
-			const current = outlines;
-			if (!current) return;
-
-			parent.outline.push(...current);
-			reversedArray[i] = [];
 		}
 	}
 

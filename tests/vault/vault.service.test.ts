@@ -872,6 +872,178 @@ describe("VaultService", () => {
 			});
 		});
 
+		it.each([
+			{
+				name: "keeps an H4 under its H2 parent when the final branch skips H3",
+				markdown: "# A\n## B\n#### C\n",
+				outline: [
+					{
+						name: "A",
+						lineNumber: 1,
+						outline: [
+							{
+								name: "B",
+								lineNumber: 2,
+								outline: [
+									{ name: "C", lineNumber: 3, outline: [] },
+								],
+							},
+						],
+					},
+				],
+			},
+			{
+				name: "keeps the H2 parent when returning from H4 to H3",
+				markdown: "# A\n## B\n#### C\n### D\n",
+				outline: [
+					{
+						name: "A",
+						lineNumber: 1,
+						outline: [
+							{
+								name: "B",
+								lineNumber: 2,
+								outline: [
+									{ name: "C", lineNumber: 3, outline: [] },
+									{ name: "D", lineNumber: 4, outline: [] },
+								],
+							},
+						],
+					},
+				],
+			},
+			{
+				name: "keeps an H2 under the H1 after a skipped H3",
+				markdown: "# A\n### B\n## C\n### D",
+				outline: [
+					{
+						name: "A",
+						lineNumber: 1,
+						outline: [
+							{ name: "B", lineNumber: 2, outline: [] },
+							{
+								name: "C",
+								lineNumber: 3,
+								outline: [
+									{ name: "D", lineNumber: 4, outline: [] },
+								],
+							},
+						],
+					},
+				],
+			},
+			{
+				name: "keeps an H3 under a later H1 when the new branch skips H2",
+				markdown: "## A\n### B\n# C\n### D",
+				outline: [
+					{
+						name: "A",
+						lineNumber: 1,
+						outline: [{ name: "B", lineNumber: 2, outline: [] }],
+					},
+					{
+						name: "C",
+						lineNumber: 3,
+						outline: [{ name: "D", lineNumber: 4, outline: [] }],
+					},
+				],
+			},
+			{
+				name: "preserves sibling order after returning across multiple skipped levels",
+				markdown: "# A\n#### B\n\n## C\n",
+				outline: [
+					{
+						name: "A",
+						lineNumber: 1,
+						outline: [
+							{ name: "B", lineNumber: 2, outline: [] },
+							{ name: "C", lineNumber: 4, outline: [] },
+						],
+					},
+				],
+			},
+			{
+				name: "keeps earlier roots and their children when a shallower root appears below H1",
+				markdown: "### A\n##### B\n## C\n#### D\n",
+				outline: [
+					{
+						name: "A",
+						lineNumber: 1,
+						outline: [{ name: "B", lineNumber: 2, outline: [] }],
+					},
+					{
+						name: "C",
+						lineNumber: 3,
+						outline: [{ name: "D", lineNumber: 4, outline: [] }],
+					},
+				],
+			},
+		])("$name", async ({ markdown, outline }) => {
+			const notePath = "skipped-heading-levels.md";
+			await writeFile(join(vaultDir, notePath), markdown);
+
+			await expect(
+				service.getOutline(notePath, unauthorizedIdentity),
+			).resolves.toEqual({ notePath, outline });
+		});
+
+		it.each([
+			{ lineEnding: "LF", separator: "\n", hasTrailingNewline: false },
+			{ lineEnding: "LF", separator: "\n", hasTrailingNewline: true },
+			{
+				lineEnding: "CRLF",
+				separator: "\r\n",
+				hasTrailingNewline: false,
+			},
+			{
+				lineEnding: "CRLF",
+				separator: "\r\n",
+				hasTrailingNewline: true,
+			},
+		])(
+			"ignores a final heading inside an unclosed backtick fence ($lineEnding, trailing newline: $hasTrailingNewline)",
+			async ({ separator, hasTrailingNewline }) => {
+				const notePath = "unclosed-fence.md";
+				const finalLineEnding = hasTrailingNewline ? separator : "";
+				await writeFile(
+					join(vaultDir, notePath),
+					"```" + separator + "# Hidden" + finalLineEnding,
+				);
+
+				await expect(
+					service.getOutline(notePath, unauthorizedIdentity),
+				).resolves.toEqual({ notePath, outline: [] });
+			},
+		);
+
+		it("keeps the opening fence length across chunks and resumes after a valid closing fence", async () => {
+			const notePath = "fence-across-chunks.md";
+			await writeFile(
+				join(vaultDir, notePath),
+				[
+					"````markdown",
+					"x".repeat(24 * 1024),
+					"```",
+					"# Hidden after short fence",
+					"`````",
+					"# Visible after closing fence",
+				].join("\n"),
+			);
+
+			await expect(
+				service.getOutline(notePath, unauthorizedIdentity),
+			).resolves.toEqual({
+				notePath,
+				outline: [
+					{
+						name: "Visible after closing fence",
+						lineNumber: 6,
+						outline: [],
+					},
+				],
+			});
+		});
+
 		it("includes the final heading when the note has no trailing newline", async () => {
 			const notePath = join(vaultDir, "no-trailing-newline.md");
 			await writeFile(notePath, "Body text\n# Final heading");
@@ -885,6 +1057,36 @@ describe("VaultService", () => {
 				notePath: relative(vaultDir, notePath).split(sep).join("/"),
 				outline: [
 					{ name: "Final heading", lineNumber: 2, outline: [] },
+				],
+			});
+		});
+
+		it("returns an empty title for a final H1 with closing hashes", async () => {
+			const notePath = "empty-final-heading.md";
+			await writeFile(join(vaultDir, notePath), "# ###");
+
+			await expect(
+				service.getOutline(notePath, unauthorizedIdentity),
+			).resolves.toEqual({
+				notePath,
+				outline: [{ name: "", lineNumber: 1, outline: [] }],
+			});
+		});
+
+		it("keeps a child under an empty H1 with closing hashes", async () => {
+			const notePath = "empty-parent-heading.md";
+			await writeFile(join(vaultDir, notePath), "# ###\n## Child\n");
+
+			await expect(
+				service.getOutline(notePath, unauthorizedIdentity),
+			).resolves.toEqual({
+				notePath,
+				outline: [
+					{
+						name: "",
+						lineNumber: 1,
+						outline: [{ name: "Child", lineNumber: 2, outline: [] }],
+					},
 				],
 			});
 		});
